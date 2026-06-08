@@ -1,33 +1,39 @@
-// gg — GDML grep. Scaffold smoke test: parse a file (or stdin) and dump the
-// named-node tree. The query engine replaces this dump in later commits.
+// gg — GDML grep. Run a structural/graph query against a GDML file (or stdin)
+// and print matching elements grep-style (file:line: first-line-of-source).
+//   gg '<query>' <file.gdml|->
+// Exit codes follow grep: 0 = matches found, 1 = none, 2 = error.
 #include "document.hpp"
+#include "matchengine.hpp"
+#include "nfa.hpp"
+#include "query.hpp"
 
 #include <cstdio>
 #include <exception>
-
-namespace {
-
-void dump(const gg::Document &doc, TSNode n, int depth) {
-    if (ts_node_is_null(n)) return;
-    std::printf("%*s%s [%u]\n", depth * 2, "", ts_node_type(n), doc.line(n));
-    uint32_t count = ts_node_named_child_count(n);
-    for (uint32_t i = 0; i < count; ++i)
-        dump(doc, ts_node_named_child(n, i), depth + 1);
-}
-
-}  // namespace
+#include <string_view>
 
 int main(int argc, char **argv) {
-    if (argc != 2) {
-        std::fprintf(stderr, "usage: gg <file.gdml|->\n");
+    if (argc != 3) {
+        std::fprintf(stderr, "usage: gg '<query>' <file.gdml|->\n");
         return 2;
     }
     try {
-        gg::Document doc(argv[1]);
-        dump(doc, doc.root(), 0);
+        gg::Query q = gg::QueryParser::parseString(argv[1]);
+        gg::Document doc(argv[2]);
+        gg::Nfa nfa(q, tree_sitter_gdml());
+        for (const std::string &t : nfa.unknownTypes())
+            std::fprintf(stderr, "gg: warning: unknown node type '%s'\n", t.c_str());
+
+        gg::MatchEngine engine(doc, nfa);
+        std::vector<TSNode> hits = engine.run();
+        for (TSNode n : hits) {
+            std::string_view text = doc.text(n);
+            text = text.substr(0, text.find('\n'));
+            std::printf("%s:%u: %.*s\n", doc.name().c_str(), doc.line(n),
+                        static_cast<int>(text.size()), text.data());
+        }
+        return hits.empty() ? 1 : 0;
     } catch (const std::exception &e) {
         std::fprintf(stderr, "gg: %s\n", e.what());
         return 2;
     }
-    return 0;
 }

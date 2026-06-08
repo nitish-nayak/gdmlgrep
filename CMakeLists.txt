@@ -28,3 +28,10 @@ target_link_libraries(gg-engine INTERFACE tree-sitter gdml-grammar)
 add_executable(gg src/main.cpp)
 target_compile_options(gg PRIVATE -Wall -Wextra)
 target_link_libraries(gg PRIVATE gg-engine)
+
+# Tests (built by default; run directly).
+enable_testing()
+add_executable(test_prewalk tests/test_prewalk.cpp)
+target_compile_options(test_prewalk PRIVATE -Wall -Wextra)
+target_link_libraries(test_prewalk PRIVATE gg-engine)
+add_test(NAME prewalk COMMAND test_prewalk ${CMAKE_CURRENT_SOURCE_DIR}/../tree-sitter-gdml/gdml/simple.gdml)

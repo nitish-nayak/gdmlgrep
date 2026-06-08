@@ -1,6 +1,6 @@
 // gg — GDML grep. Scaffold smoke test: parse a file (or stdin) and dump the
 // named-node tree. The query engine replaces this dump in later commits.
-#include "Document.hpp"
+#include "document.hpp"
 
 #include <cstdio>
 #include <exception>

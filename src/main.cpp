@@ -25,6 +25,9 @@ int main(int argc, char **argv) {
 
         gg::MatchEngine engine(doc, nfa);
         std::vector<TSNode> hits = engine.run();
+        for (const auto &u : engine.unevaluable())
+            std::fprintf(stderr, "gg: warning: could not evaluate %s at %s:%u\n",
+                         u.first.c_str(), doc.name().c_str(), doc.line(u.second));
         for (TSNode n : hits) {
             std::string_view text = doc.text(n);
             text = text.substr(0, text.find('\n'));

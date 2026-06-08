@@ -44,3 +44,7 @@ add_test(NAME nfa COMMAND test_nfa "volume / (physvol => volume)%")
 # End-to-end smoke: a deref query must find matches (exit 0).
 add_test(NAME match COMMAND gg "physvol => volume"
          ${CMAKE_CURRENT_SOURCE_DIR}/../tree-sitter-gdml/gdml/simple.gdml)
+
+# A numeric-guard query must find matches (exit 0).
+add_test(NAME guard COMMAND gg "box[x>200]"
+         ${CMAKE_CURRENT_SOURCE_DIR}/../tree-sitter-gdml/gdml/simple.gdml)

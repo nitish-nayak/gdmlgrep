@@ -43,9 +43,12 @@ public:
     };
     struct Edge { int to; LinkAxis axis; };
 
-    Nfa(const Query &q, const TSLanguage *lang) : lang_(lang) {
-        floating_ = !q.anchored;
-        Sets s = build(*q.root, LinkAxis::Child);  // root entry axis only matters for a bare top-level star
+    Nfa(const Query &q, const TSLanguage *lang) : Nfa(*q.root, q.anchored, lang) {}
+
+    // Core constructor — also used to compile a predicate's subpath (C3).
+    Nfa(const Node &root, bool anchored, const TSLanguage *lang) : lang_(lang) {
+        floating_ = !anchored;
+        Sets s = build(root, LinkAxis::Child);  // entry axis only matters for a bare top-level star
         start_ = std::move(s.first);
         for (int p : s.last) pos_[p].accept = true;
     }

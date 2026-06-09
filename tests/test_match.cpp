@@ -36,6 +36,8 @@ int main(int argc, char **argv) {
         {"volume[physvol]", 1},
         {"volume[!physvol]", 2},
         {"box | tube", 6},
+        {"cone[deltaphi>3]", 1},     // deltaphi=TWOPI=2*pi=6.28 (easy-T3)
+        {"sphere[deltatheta>4]", 0}, // deltatheta=PI=3.14, not > 4
     };
     int failures = 0;
     try {

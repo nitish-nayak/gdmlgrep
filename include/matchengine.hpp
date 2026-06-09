@@ -18,6 +18,7 @@
 // diagnostic. Existence guards `[subpath]` run a sub-engine rooted at the node.
 #include "dfa.hpp"
 #include "document.hpp"
+#include "expreval.hpp"
 #include "nfa.hpp"
 #include "prewalk.hpp"
 #include "ts.hpp"
@@ -78,6 +79,7 @@ private:
     std::map<const Predicate *, std::unique_ptr<Nfa>> subNfas_;      // declared before subEngines_
     std::map<const Predicate *, std::unique_ptr<MatchEngine>> subEngines_;
     std::unique_ptr<Dfa> dfa_;
+    std::unique_ptr<Evaluator> eval_;                               // easy-T3 expression evaluator (lazy)
     std::set<std::pair<int, uint32_t>> visitedDfa_;                  // (dfa state, start byte)
     bool stopAtFirst_ = false;
     bool found_ = false;
@@ -181,19 +183,37 @@ private:
         const std::string &av = *at;
         if (p.op == CmpOp::Regex)
             return std::regex_search(av, regexFor(p)) ? Tri::True : Tri::False;
-        double avn, pvn;
-        bool an = parseNum(av, avn), pn = parseNum(p.value, pvn);
-        switch (p.op) {
-            case CmpOp::Eq: return (an && pn) ? tri(avn == pvn) : tri(av == p.value);
-            case CmpOp::Ne: return (an && pn) ? tri(avn != pvn) : tri(av != p.value);
-            case CmpOp::Lt: case CmpOp::Le: case CmpOp::Gt: case CmpOp::Ge:
-                if (!(an && pn)) { recordUneval(p, n); return Tri::Unknown; }
-                if (p.op == CmpOp::Lt) return tri(avn < pvn);
-                if (p.op == CmpOp::Le) return tri(avn <= pvn);
-                if (p.op == CmpOp::Gt) return tri(avn > pvn);
-                return tri(avn >= pvn);
-            default: return Tri::False;
+
+        double pv;
+        if (parseNum(p.value, pv)) {  // numeric intent: the LHS must reduce to a number
+            double lv;
+            if (!numericValue(n, p.field, av, lv)) { recordUneval(p, n); return Tri::Unknown; }
+            switch (p.op) {
+                case CmpOp::Eq: return tri(lv == pv);
+                case CmpOp::Ne: return tri(lv != pv);
+                case CmpOp::Lt: return tri(lv < pv);
+                case CmpOp::Le: return tri(lv <= pv);
+                case CmpOp::Gt: return tri(lv > pv);
+                case CmpOp::Ge: return tri(lv >= pv);
+                default: return Tri::False;
+            }
         }
+        switch (p.op) {  // textual intent (RHS is not a number)
+            case CmpOp::Eq: return tri(av == p.value);
+            case CmpOp::Ne: return tri(av != p.value);
+            default: recordUneval(p, n); return Tri::Unknown;  // ordering on non-numeric
+        }
+    }
+
+    // The numeric value of attribute `field`: a bare literal, else the parsed
+    // value expression evaluated over <define> constants (easy-T3).
+    bool numericValue(TSNode n, const std::string &field, const std::string &av, double &out) {
+        if (parseNum(av, out)) return true;
+        TSNode e = valueExprNode(doc_, n, field);
+        if (ts_node_is_null(e)) return false;
+        if (!eval_) eval_ = std::make_unique<Evaluator>(doc_);
+        if (auto v = eval_->eval(e)) { out = *v; return true; }
+        return false;
     }
 
     // Attribute value text (quote-stripped): a real field (name/ref), else a

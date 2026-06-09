@@ -18,6 +18,7 @@
 #include <cstdio>
 #include <cstring>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <string_view>
@@ -29,6 +30,33 @@ inline void emitLine(const Document &doc, TSNode n) {
     t = t.substr(0, t.find('\n'));
     std::printf("%s:%u: %.*s\n", doc.name().c_str(), doc.line(n),
                 static_cast<int>(t.size()), t.data());
+}
+
+inline std::string stripQuotes(std::string_view t) {
+    if (t.size() >= 2 && (t.front() == '"' || t.front() == '\'')) t = t.substr(1, t.size() - 2);
+    return std::string(t);
+}
+
+// The value of a node's field for `-o`: "type" -> the element type; a real
+// field (name/ref); else a value/string_attribute child (x, rmax, unit, ...).
+inline std::optional<std::string> fieldOf(const Document &doc, TSNode n, const std::string &field) {
+    if (field == "type") return std::string(ts_node_type(n));
+    static const TSLanguage *lang = tree_sitter_gdml();
+    static TSSymbol va = ts_language_symbol_for_name(lang, "value_attribute", 15, true);
+    static TSSymbol sa = ts_language_symbol_for_name(lang, "string_attribute", 16, true);
+    TSNode f = ts_node_child_by_field_name(n, field.c_str(), static_cast<uint32_t>(field.size()));
+    if (!ts_node_is_null(f)) return stripQuotes(doc.text(f));
+    uint32_t c = ts_node_named_child_count(n);
+    for (uint32_t i = 0; i < c; ++i) {
+        TSNode ch = ts_node_named_child(n, i);
+        TSSymbol s = ts_node_symbol(ch);
+        if (s != va && s != sa) continue;
+        TSNode name = ts_node_named_child(ch, 0);
+        if (ts_node_is_null(name) || doc.text(name) != field) continue;
+        TSNode val = ts_node_child_by_field_name(ch, "value", 5);
+        if (!ts_node_is_null(val)) return stripQuotes(doc.text(val));
+    }
+    return std::nullopt;
 }
 
 class Verbs {

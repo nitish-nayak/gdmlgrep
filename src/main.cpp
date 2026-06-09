@@ -5,8 +5,9 @@
 //   gg dead-defs     <file>             names defined but never referenced
 //   gg dangling      <file>             names referenced but never defined
 //   gg find-usages <name> <file>        sites referencing <name>
-// With multiple queries the file is parsed (and indexed) once and each query is
-// run against the shared tree, each result block headed by "==> <query> <==".
+// Flags: -c count only, -o <field> emit a field (name/ref/type/attr), -q quiet
+// (exit code only). With multiple queries the file is parsed (and indexed) once
+// and each query runs against the shared tree, each block headed "==> q <==".
 // Query mode follows grep exit codes (0 = matches, 1 = none, 2 = error); verbs
 // return 0 on success, 2 on error.
 #include "document.hpp"
@@ -42,9 +43,15 @@ int runVerb(const char *verb, char **argv, int argc) {
     return 0;
 }
 
+struct Options {
+    bool quiet = false;       // -q: no output, exit code only
+    bool count = false;       // -c: print match count only
+    std::string field;        // -o <field>: emit this field instead of the line
+};
+
 // Parse `file` once, then run each query against the shared tree. A PreWalk
 // index is built at most once, lazily, and shared across deref queries.
-int runQueries(const std::vector<std::string> &queries, const char *file) {
+int runQueries(const std::vector<std::string> &queries, const char *file, const Options &opt) {
     gg::Document doc(file);
     std::unique_ptr<gg::PreWalk> shared;
     bool multi = queries.size() > 1;
@@ -61,9 +68,19 @@ int runQueries(const std::vector<std::string> &queries, const char *file) {
         for (const auto &u : engine.unevaluable())
             std::fprintf(stderr, "gg: warning: could not evaluate %s at %s:%u\n",
                          u.first.c_str(), doc.name().c_str(), doc.line(u.second));
-        if (multi) std::printf("==> %s <==\n", query.c_str());
-        for (TSNode n : hits) gg::emitLine(doc, n);
         anyMatch = anyMatch || !hits.empty();
+
+        if (opt.quiet) continue;
+        if (opt.count) {
+            if (multi) std::printf("%s:%zu\n", query.c_str(), hits.size());
+            else std::printf("%zu\n", hits.size());
+            continue;
+        }
+        if (multi) std::printf("==> %s <==\n", query.c_str());
+        for (TSNode n : hits) {
+            if (opt.field.empty()) { gg::emitLine(doc, n); continue; }
+            if (auto v = gg::fieldOf(doc, n, opt.field)) std::printf("%s\n", v->c_str());
+        }
     }
     return anyMatch ? 0 : 1;
 }
@@ -74,8 +91,8 @@ bool isVerb(const char *s) {
 }
 
 void usage() {
-    std::fprintf(stderr, "usage: gg '<query>' <file.gdml|->\n"
-                         "       gg -e '<query>' [-e '<query>'...] <file>\n"
+    std::fprintf(stderr, "usage: gg [-c] [-q] [-o <field>] '<query>' <file.gdml|->\n"
+                         "       gg [-c] [-q] [-o <field>] -e '<query>' [-e '<query>'...] <file>\n"
                          "       gg <placement-tree|dead-defs|dangling> <file>\n"
                          "       gg find-usages <name> <file>\n");
 }
@@ -87,18 +104,22 @@ int main(int argc, char **argv) {
     try {
         if (isVerb(argv[1])) return runVerb(argv[1], argv, argc);
 
+        Options opt;
         std::vector<std::string> queries;
         std::vector<const char *> positional;
         for (int i = 1; i < argc; ++i) {
             if (std::strcmp(argv[i], "-e") == 0 && i + 1 < argc) queries.push_back(argv[++i]);
+            else if (std::strcmp(argv[i], "-o") == 0 && i + 1 < argc) opt.field = argv[++i];
+            else if (std::strcmp(argv[i], "-c") == 0) opt.count = true;
+            else if (std::strcmp(argv[i], "-q") == 0) opt.quiet = true;
             else positional.push_back(argv[i]);
         }
         if (!queries.empty()) {
             if (positional.size() != 1) { usage(); return 2; }  // exactly the file
-            return runQueries(queries, positional[0]);
+            return runQueries(queries, positional[0], opt);
         }
         if (positional.size() != 2) { usage(); return 2; }       // <query> <file>
-        return runQueries({positional[0]}, positional[1]);
+        return runQueries({positional[0]}, positional[1], opt);
     } catch (const std::exception &e) {
         std::fprintf(stderr, "gg: %s\n", e.what());
         return 2;

@@ -1,20 +1,22 @@
 #pragma once
-// matchengine.hpp — runs an Nfa over a Document by NFA-simulation. This is the
-// correctness oracle; a DFA layer will optimize the transition step later.
+// matchengine.hpp — runs a query over a Document, driven by the lazily-built
+// DFA (dfa.hpp). One DFS over the tree threads a single DFA state id; each
+// structural transition is a memoized table lookup.
 //
-// One DFS over the tree carries a set of active positions. Floating queries
-// (the default) attempt a fresh start at every node during that single pass
-// (P1: O(n), not a re-walk per node); anchored queries start only at the root.
-// Deref edges jump through the PreWalk reference index (built lazily, only when
-// the query uses a deref axis), so the walk is over a graph — `continueAt` is
-// visited-guarded on (active-set, node) to break deref cycles and shared
-// targets. Matched (accept) nodes are deduped and returned in document order.
+// Floating queries (the default) attempt a fresh start at every node during
+// that single pass (P1: O(n), not a re-walk per node); anchored queries start
+// only at the root. Deref edges jump through the PreWalk reference index (built
+// lazily, only when the query uses a deref axis), so the walk is over a graph —
+// `continueDfaWalk` is visited-guarded on (state, node) to break deref cycles
+// and shared targets. Matched (accept) nodes are deduped and returned in
+// document order.
 //
 // A position matches a node when its type matches AND its value-predicate
 // guards pass. Guard results are tri-state {true,false,unevaluable}: an
 // unevaluable guard (e.g. a numeric compare against an expression we can't yet
 // evaluate) is never a silent no-match — it is excluded but recorded for a
 // diagnostic. Existence guards `[subpath]` run a sub-engine rooted at the node.
+#include "dfa.hpp"
 #include "document.hpp"
 #include "nfa.hpp"
 #include "prewalk.hpp"
@@ -48,15 +50,16 @@ public:
 
     // The matched (final-step) nodes, deduped and in document order.
     std::vector<TSNode> run() {
+        if (!dfa_) dfa_ = std::make_unique<Dfa>(nfa_, skip_);
         stopAtFirst_ = false;
         matches_.clear();
-        visited_.clear();
+        visitedDfa_.clear();
+        uneval_.clear();
         found_ = false;
-        sweep(doc_.root(), {});
-        std::vector<TSNode> out;
-        out.reserve(matches_.size());
-        for (auto &kv : matches_) out.push_back(kv.second);
-        return out;
+        TSNode root = doc_.root();
+        int s = dfa_->step(dfa_->empty(), ts_node_symbol(root), LinkAxis::Child, true);
+        walkDfa(root, guardFilterDfa(s, root));
+        return collect();
     }
 
     // Predicates that could not be evaluated (predicate text, node) — for diagnostics.
@@ -70,29 +73,20 @@ private:
     TSSymbol valueAttrSym_ = 0, stringAttrSym_ = 0;
     std::set<TSSymbol> skip_;                                   // non-element node types
     std::map<std::pair<uint32_t, uint32_t>, TSNode> matches_;   // (start,end) -> node
-    std::set<std::pair<std::string, uint32_t>> visited_;        // (active-set, start byte)
     std::vector<std::pair<std::string, TSNode>> uneval_;
     std::map<const Predicate *, std::regex> reCache_;
     std::map<const Predicate *, std::unique_ptr<Nfa>> subNfas_;      // declared before subEngines_
     std::map<const Predicate *, std::unique_ptr<MatchEngine>> subEngines_;
+    std::unique_ptr<Dfa> dfa_;
+    std::set<std::pair<int, uint32_t>> visitedDfa_;                  // (dfa state, start byte)
     bool stopAtFirst_ = false;
     bool found_ = false;
 
-    // ---- structural + guarded match ----
-
-    bool isElement(TSNode n) const { return skip_.find(ts_node_symbol(n)) == skip_.end(); }
-
-    bool matchType(int p, TSNode n) const {
-        const Nfa::Position &pos = nfa_.positions()[p];
-        if (pos.wildcard) return isElement(n);
-        return pos.symbol != 0 && pos.symbol == ts_node_symbol(n);
-    }
-
-    bool matches(int p, TSNode n) {
-        if (!matchType(p, n)) return false;
-        Tri g = guardsPass(nfa_.positions()[p], n);
-        if (g == Tri::Unknown) return false;  // recorded in evalCompare; excluded, not silent
-        return g == Tri::True;
+    std::vector<TSNode> collect() {
+        std::vector<TSNode> out;
+        out.reserve(matches_.size());
+        for (auto &kv : matches_) out.push_back(kv.second);
+        return out;
     }
 
     void record(TSNode n) {
@@ -100,60 +94,61 @@ private:
         if (stopAtFirst_) found_ = true;
     }
 
-    std::vector<int> advance(const std::vector<int> &active, LinkAxis axis) const {
-        std::vector<int> out;
-        for (int p : active)
-            for (const Nfa::Edge &e : nfa_.follow(p))
-                if (e.axis == axis) out.push_back(e.to);
-        return out;
-    }
+    // ---- DFA-driven walk ----
 
-    void handle(TSNode n, const std::vector<int> &active) {
-        for (int p : active)
-            if (nfa_.positions()[p].accept) { record(n); break; }
-        if (index_) {
-            std::vector<int> derefIn = advance(active, LinkAxis::Deref);
-            if (!derefIn.empty())
-                for (TSNode d : gatherDeref(n)) { continueAt(d, derefIn); if (stopAtFirst_ && found_) return; }
-        }
-    }
-
-    void sweep(TSNode n, const std::vector<int> &childIn) {
+    void walkDfa(TSNode n, int active) {
         if (stopAtFirst_ && found_) return;
-        std::vector<int> active;
-        for (int p : childIn)
-            if (matches(p, n)) active.push_back(p);
-        if (nfa_.floating() || ts_node_eq(n, doc_.root()))
-            for (int s : nfa_.start())
-                if (matches(s, n)) active.push_back(s);
-        handle(n, active);
-        std::vector<int> childContinue = advance(active, LinkAxis::Child);
+        const Dfa::State &st = dfa_->state(active);
+        if (st.accept) record(n);
+        if (st.hasDeref && index_) {
+            for (TSNode d : gatherDeref(n)) {
+                int da = guardFilterDfa(dfa_->step(active, ts_node_symbol(d), LinkAxis::Deref, false), d);
+                if (!dfa_->state(da).pos.empty()) continueDfaWalk(d, da);
+                if (stopAtFirst_ && found_) return;
+            }
+        }
         uint32_t c = ts_node_named_child_count(n);
         for (uint32_t i = 0; i < c; ++i) {
-            sweep(ts_node_named_child(n, i), childContinue);
+            TSNode ch = ts_node_named_child(n, i);
+            int s = dfa_->step(active, ts_node_symbol(ch), LinkAxis::Child, nfa_.floating());
+            walkDfa(ch, guardFilterDfa(s, ch));
             if (stopAtFirst_ && found_) return;
         }
     }
 
-    void continueAt(TSNode n, const std::vector<int> &incoming) {
-        std::vector<int> active;
-        for (int p : incoming)
-            if (matches(p, n)) active.push_back(p);
-        if (active.empty() || !visit(active, n)) return;
-        handle(n, active);
-        std::vector<int> childContinue = advance(active, LinkAxis::Child);
-        if (childContinue.empty()) return;
+    void continueDfaWalk(TSNode n, int active) {
+        if (!visitedDfa_.emplace(active, ts_node_start_byte(n)).second) return;
+        const Dfa::State &st = dfa_->state(active);
+        if (st.accept) record(n);
+        if (st.hasDeref && index_) {
+            for (TSNode d : gatherDeref(n)) {
+                int da = guardFilterDfa(dfa_->step(active, ts_node_symbol(d), LinkAxis::Deref, false), d);
+                if (!dfa_->state(da).pos.empty()) continueDfaWalk(d, da);
+                if (stopAtFirst_ && found_) return;
+            }
+        }
         uint32_t c = ts_node_named_child_count(n);
         for (uint32_t i = 0; i < c; ++i) {
-            continueAt(ts_node_named_child(n, i), childContinue);
+            TSNode ch = ts_node_named_child(n, i);
+            int a = guardFilterDfa(dfa_->step(active, ts_node_symbol(ch), LinkAxis::Child, false), ch);
+            if (!dfa_->state(a).pos.empty()) continueDfaWalk(ch, a);
             if (stopAtFirst_ && found_) return;
         }
     }
 
-    bool visit(const std::vector<int> &active, TSNode n) {
-        std::string key;
-        for (int p : active) { key += std::to_string(p); key += ','; }
-        return visited_.emplace(std::move(key), ts_node_start_byte(n)).second;
+    // Refine a structural state by dropping guard-failing positions at n. A
+    // state with no guarded positions returns unchanged (the table-driven path).
+    int guardFilterDfa(int structId, TSNode n) {
+        const Dfa::State &st = dfa_->state(structId);
+        if (st.guarded.empty()) return structId;
+        std::vector<int> keep;
+        keep.reserve(st.pos.size());
+        for (int q : st.pos) {
+            const Nfa::Position &P = nfa_.positions()[q];
+            if (P.guards.empty() || guardsPass(P, n) == Tri::True) keep.push_back(q);
+        }
+        if (keep.size() == st.pos.size()) return structId;
+        return dfa_->intern(std::move(keep));
     }
 
     // ---- guard evaluation ----
@@ -242,11 +237,16 @@ private:
 
     // Does the (sub-)query match anywhere strictly below n? Early-out.
     bool existsUnder(TSNode n) {
+        if (!dfa_) dfa_ = std::make_unique<Dfa>(nfa_, skip_);
         stopAtFirst_ = true;
         found_ = false;
-        visited_.clear();
+        visitedDfa_.clear();
         uint32_t c = ts_node_named_child_count(n);
-        for (uint32_t i = 0; i < c && !found_; ++i) sweep(ts_node_named_child(n, i), {});
+        for (uint32_t i = 0; i < c && !found_; ++i) {
+            TSNode ch = ts_node_named_child(n, i);
+            int s = dfa_->step(dfa_->empty(), ts_node_symbol(ch), LinkAxis::Child, true);
+            walkDfa(ch, guardFilterDfa(s, ch));
+        }
         return found_;
     }
 

@@ -39,6 +39,15 @@ add_test(NAME prewalk COMMAND test_prewalk ${CMAKE_CURRENT_SOURCE_DIR}/../tree-s
 add_executable(test_nfa tests/test_nfa.cpp)
 target_compile_options(test_nfa PRIVATE -Wall -Wextra)
 target_link_libraries(test_nfa PRIVATE gg-engine)
+
+add_executable(bench tests/bench.cpp)
+target_compile_options(bench PRIVATE -Wall -Wextra)
+target_link_libraries(bench PRIVATE gg-engine)
+
+add_executable(test_match tests/test_match.cpp)
+target_compile_options(test_match PRIVATE -Wall -Wextra)
+target_link_libraries(test_match PRIVATE gg-engine)
+add_test(NAME match_suite COMMAND test_match ${CMAKE_CURRENT_SOURCE_DIR}/../tree-sitter-gdml/gdml/simple.gdml)
 add_test(NAME nfa COMMAND test_nfa "volume / (physvol => volume)%")
 
 # End-to-end smoke: a deref query must find matches (exit 0).

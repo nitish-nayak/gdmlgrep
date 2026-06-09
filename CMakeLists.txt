@@ -52,6 +52,10 @@ add_test(NAME match_suite COMMAND test_match ${CMAKE_CURRENT_SOURCE_DIR}/../tree
 # Verb smoke: placement-tree runs and exits 0.
 add_test(NAME verb_placement COMMAND gg placement-tree
          ${CMAKE_CURRENT_SOURCE_DIR}/../tree-sitter-gdml/gdml/simple.gdml)
+
+# Multiple queries via -e on a single parse.
+add_test(NAME multi_query COMMAND gg -e physvol -e volume
+         ${CMAKE_CURRENT_SOURCE_DIR}/../tree-sitter-gdml/gdml/simple.gdml)
 add_test(NAME nfa COMMAND test_nfa "volume / (physvol => volume)%")
 
 # End-to-end smoke: a deref query must find matches (exit 0).

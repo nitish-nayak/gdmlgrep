@@ -95,11 +95,19 @@ bool isVerb(const char *s) {
            !std::strcmp(s, "dangling") || !std::strcmp(s, "find-usages");
 }
 
-void usage() {
-    std::fprintf(stderr, "usage: gg [-c] [-q] [-o <field>] [--pretty] '<query>' <file.gdml|->\n"
-                         "       gg [flags] -e '<query>' [-e '<query>'...] <file>\n"
-                         "       gg [--pretty] <placement-tree|dead-defs|dangling> <file>\n"
-                         "       gg [--pretty] find-usages <name> <file>\n");
+void usage(std::FILE *out) {
+    std::fprintf(out, "usage: gg [-c] [-q] [-o <field>] [--pretty] '<query>' <file.gdml|->\n"
+                      "       gg [flags] -e '<query>' [-e '<query>'...] <file>\n"
+                      "       gg [--pretty] <placement-tree|dead-defs|dangling> <file>\n"
+                      "       gg [--pretty] find-usages <name> <file>\n"
+                      "\n"
+                      "flags:\n"
+                      "  -e <query>   add a query (repeatable); the file is parsed once\n"
+                      "  -c           print match count only\n"
+                      "  -o <field>   emit a field (name/ref/type/attr) instead of the line\n"
+                      "  -q           quiet: no output, exit status only\n"
+                      "  --pretty     ANSI-colorized output (tree connectors for placement-tree)\n"
+                      "  -h, --help   show this help\n");
 }
 
 }  // namespace
@@ -109,6 +117,10 @@ int main(int argc, char **argv) {
     std::vector<std::string> queries;
     std::vector<const char *> positional;
     for (int i = 1; i < argc; ++i) {
+        if (std::strcmp(argv[i], "-h") == 0 || std::strcmp(argv[i], "--help") == 0) {
+            usage(stdout);
+            return 0;
+        }
         if (std::strcmp(argv[i], "-e") == 0 && i + 1 < argc) queries.push_back(argv[++i]);
         else if (std::strcmp(argv[i], "-o") == 0 && i + 1 < argc) opt.field = argv[++i];
         else if (std::strcmp(argv[i], "-c") == 0) opt.count = true;
@@ -116,14 +128,14 @@ int main(int argc, char **argv) {
         else if (std::strcmp(argv[i], "--pretty") == 0) opt.pretty = true;
         else positional.push_back(argv[i]);
     }
-    if (positional.empty()) { usage(); return 2; }
+    if (positional.empty()) { usage(stderr); return 2; }
     try {
         if (isVerb(positional[0])) return runVerb(positional, opt.pretty);
         if (!queries.empty()) {
-            if (positional.size() != 1) { usage(); return 2; }  // exactly the file
+            if (positional.size() != 1) { usage(stderr); return 2; }  // exactly the file
             return runQueries(queries, positional[0], opt);
         }
-        if (positional.size() != 2) { usage(); return 2; }       // <query> <file>
+        if (positional.size() != 2) { usage(stderr); return 2; }       // <query> <file>
         return runQueries({positional[0]}, positional[1], opt);
     } catch (const std::exception &e) {
         std::fprintf(stderr, "gg: %s\n", e.what());

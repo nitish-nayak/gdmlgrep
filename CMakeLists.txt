@@ -73,3 +73,6 @@ add_test(NAME guard COMMAND gg "box[x>200]"
 # --pretty colorized output runs and exits 0.
 add_test(NAME pretty COMMAND gg --pretty volume
          ${CMAKE_CURRENT_SOURCE_DIR}/../tree-sitter-gdml/gdml/simple.gdml)
+
+# -h prints usage and exits 0.
+add_test(NAME help COMMAND gg -h)

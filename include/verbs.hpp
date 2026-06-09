@@ -3,8 +3,9 @@
 // graph directly rather than the path matcher (they need cross-graph
 // correlation or non-flat output, so they can't be expressed as queries):
 //
-//   placement-tree  the geometry placement hierarchy from <world>, each volume
-//                   expanded once (shared subtrees collapsed with "see above")
+//   placement-tree  the geometry placement hierarchy from <world> (or a named
+//                   volume), each volume expanded once (shared subtrees
+//                   collapsed with "see above")
 //   dead-defs       names defined but never referenced
 //   dangling        names referenced but never defined
 //   find-usages     the sites that reference a given name
@@ -143,7 +144,17 @@ public:
         for (auto &kv : out) emitLine(doc_, kv.second, pretty_);
     }
 
-    void placementTree() {
+    // Root at <world> by default, or at a named volume when one is given.
+    void placementTree(const std::string &root = "") {
+        if (!root.empty()) {
+            const std::vector<TSNode> &defs = index_.definitions(root);
+            if (defs.empty()) {
+                std::fprintf(stderr, "gg: no volume named '%s'\n", root.c_str());
+                return;
+            }
+            for (TSNode v : defs) emitNode(v, "", 0, 0);
+            return;
+        }
         TSNode world = findFirst(doc_.root(), world_);
         if (ts_node_is_null(world)) return;
         for (TSNode v : index_.definitions(refField(world))) emitNode(v, "", 0, 0);

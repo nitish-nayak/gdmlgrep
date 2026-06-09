@@ -1,7 +1,7 @@
 // gg — GDML grep.
 //   gg '<query>' <file.gdml|->          run one query
 //   gg -e '<query>' [-e '<query>'...] <file>   run several queries on one parse
-//   gg placement-tree <file>            geometry placement hierarchy from <world>
+//   gg placement-tree [volume] <file>   geometry placement hierarchy from <world> (or <volume>)
 //   gg dead-defs     <file>             names defined but never referenced
 //   gg dangling      <file>             names referenced but never defined
 //   gg find-usages <name> <file>        sites referencing <name>
@@ -29,16 +29,22 @@ namespace {
 int runVerb(const std::vector<const char *> &pos, bool pretty) {
     const char *verb = pos[0];
     bool findUsages = std::strcmp(verb, "find-usages") == 0;
-    size_t want = findUsages ? 3u : 2u;  // [verb] [name] <file>
-    if (pos.size() != want) {
-        std::fprintf(stderr, "usage: gg %s %s<file.gdml|->\n", verb, findUsages ? "<name> " : "");
+    bool placementTree = std::strcmp(verb, "placement-tree") == 0;
+    // find-usages needs <name> <file>; placement-tree takes an optional <volume>
+    // before <file>; the rest take just <file>.
+    bool ok = findUsages ? pos.size() == 3
+            : placementTree ? pos.size() == 2 || pos.size() == 3
+            : pos.size() == 2;
+    if (!ok) {
+        std::fprintf(stderr, "usage: gg %s %s<file.gdml|->\n", verb,
+                     findUsages ? "<name> " : placementTree ? "[volume] " : "");
         return 2;
     }
     gg::Document doc(pos.back());
     gg::PreWalk index(doc);
     gg::Verbs verbs(doc, index, pretty);
     if (findUsages) verbs.findUsages(pos[1]);
-    else if (std::strcmp(verb, "placement-tree") == 0) verbs.placementTree();
+    else if (placementTree) verbs.placementTree(pos.size() == 3 ? pos[1] : "");
     else if (std::strcmp(verb, "dead-defs") == 0) verbs.deadDefs();
     else verbs.dangling();
     return 0;
@@ -98,7 +104,8 @@ bool isVerb(const char *s) {
 void usage(std::FILE *out) {
     std::fprintf(out, "usage: gg [-c] [-q] [-o <field>] [--pretty] '<query>' <file.gdml|->\n"
                       "       gg [flags] -e '<query>' [-e '<query>'...] <file>\n"
-                      "       gg [--pretty] <placement-tree|dead-defs|dangling> <file>\n"
+                      "       gg [--pretty] placement-tree [volume] <file>\n"
+                      "       gg [--pretty] <dead-defs|dangling> <file>\n"
                       "       gg [--pretty] find-usages <name> <file>\n"
                       "\n"
                       "flags:\n"

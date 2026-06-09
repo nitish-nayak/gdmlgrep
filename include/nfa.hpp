@@ -26,6 +26,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace gg {
@@ -104,8 +105,13 @@ private:
         p.step = &step;
         p.wildcard = step.wildcard;
         if (!step.wildcard) {
+            // `element` is renamed to `gdml_element` in the grammar (node_renames
+            // in rules.mjs) to dodge the inherited XML element rule; accept the
+            // bare GDML spelling at the query surface so callers needn't know it.
+            std::string_view type =
+                step.type == "element" ? std::string_view("gdml_element") : step.type;
             p.symbol = ts_language_symbol_for_name(
-                lang_, step.type.c_str(), static_cast<uint32_t>(step.type.size()), true);
+                lang_, type.data(), static_cast<uint32_t>(type.size()), true);
             if (p.symbol == 0) unknown_.push_back(step.type);
         }
         pos_.push_back(std::move(p));

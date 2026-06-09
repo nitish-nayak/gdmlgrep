@@ -146,7 +146,7 @@ public:
     void placementTree() {
         TSNode world = findFirst(doc_.root(), world_);
         if (ts_node_is_null(world)) return;
-        for (TSNode v : index_.definitions(refField(world))) emitNode(v, "", 0);
+        for (TSNode v : index_.definitions(refField(world))) emitNode(v, "", 0, 0);
     }
 
 private:
@@ -190,13 +190,17 @@ private:
         return {};
     }
 
-    // tree-style placement hierarchy. kind: 0 = root, 1 = mid sibling (|--),
-    // 2 = last sibling (`--). Shared subtrees collapse with "(see above)".
-    void emitNode(TSNode logical, const std::string &prefix, int kind) {
-        const char *conn = kind == 0 ? "" : kind == 2 ? "└── " : "├── ";
+    // Placement hierarchy. With --pretty: tree(1)-style connectors (kind: 0 =
+    // root, 1 = mid sibling |--, 2 = last `--). Plain: depth-indented names,
+    // no Unicode, so it pipes cleanly. Shared subtrees collapse with "(see above)".
+    void emitNode(TSNode logical, const std::string &prefix, int kind, int depth) {
         std::string name = nameField(logical);
-        if (pretty_) std::printf("%s%s%s%s%s", prefix.c_str(), conn, ansi::tag, name.c_str(), ansi::reset);
-        else std::printf("%s%s%s", prefix.c_str(), conn, name.c_str());
+        if (pretty_) {
+            const char *conn = kind == 0 ? "" : kind == 2 ? "└── " : "├── ";
+            std::printf("%s%s%s%s%s", prefix.c_str(), conn, ansi::tag, name.c_str(), ansi::reset);
+        } else {
+            std::printf("%*s%s", depth * 2, "", name.c_str());
+        }
         if (!visited_.insert(name).second) {
             std::printf("%s (see above)%s\n", pretty_ ? ansi::dim : "", pretty_ ? ansi::reset : "");
             return;
@@ -211,7 +215,7 @@ private:
         }
         std::string childPrefix = prefix + (kind == 0 ? "" : kind == 2 ? "    " : "│   ");
         for (size_t i = 0; i < placed.size(); ++i)
-            emitNode(placed[i], childPrefix, i + 1 == placed.size() ? 2 : 1);
+            emitNode(placed[i], childPrefix, i + 1 == placed.size() ? 2 : 1, depth + 1);
     }
 
     // Names referenced by something other than a captured `ref` field:

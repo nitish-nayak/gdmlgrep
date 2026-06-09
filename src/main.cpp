@@ -26,17 +26,18 @@
 
 namespace {
 
-int runVerb(const char *verb, char **argv, int argc) {
+int runVerb(const std::vector<const char *> &pos, bool pretty) {
+    const char *verb = pos[0];
     bool findUsages = std::strcmp(verb, "find-usages") == 0;
-    int want = findUsages ? 4 : 3;
-    if (argc != want) {
+    size_t want = findUsages ? 3u : 2u;  // [verb] [name] <file>
+    if (pos.size() != want) {
         std::fprintf(stderr, "usage: gg %s %s<file.gdml|->\n", verb, findUsages ? "<name> " : "");
         return 2;
     }
-    gg::Document doc(argv[argc - 1]);
+    gg::Document doc(pos.back());
     gg::PreWalk index(doc);
-    gg::Verbs verbs(doc, index);
-    if (findUsages) verbs.findUsages(argv[2]);
+    gg::Verbs verbs(doc, index, pretty);
+    if (findUsages) verbs.findUsages(pos[1]);
     else if (std::strcmp(verb, "placement-tree") == 0) verbs.placementTree();
     else if (std::strcmp(verb, "dead-defs") == 0) verbs.deadDefs();
     else verbs.dangling();
@@ -46,6 +47,7 @@ int runVerb(const char *verb, char **argv, int argc) {
 struct Options {
     bool quiet = false;       // -q: no output, exit code only
     bool count = false;       // -c: print match count only
+    bool pretty = false;      // --pretty: ANSI-colorize stdout
     std::string field;        // -o <field>: emit this field instead of the line
 };
 
@@ -76,9 +78,12 @@ int runQueries(const std::vector<std::string> &queries, const char *file, const 
             else std::printf("%zu\n", hits.size());
             continue;
         }
-        if (multi) std::printf("==> %s <==\n", query.c_str());
+        if (multi) {
+            if (opt.pretty) std::printf("%s==> %s <==%s\n", gg::ansi::dim, query.c_str(), gg::ansi::reset);
+            else std::printf("==> %s <==\n", query.c_str());
+        }
         for (TSNode n : hits) {
-            if (opt.field.empty()) { gg::emitLine(doc, n); continue; }
+            if (opt.field.empty()) { gg::emitLine(doc, n, opt.pretty); continue; }
             if (auto v = gg::fieldOf(doc, n, opt.field)) std::printf("%s\n", v->c_str());
         }
     }
@@ -91,29 +96,29 @@ bool isVerb(const char *s) {
 }
 
 void usage() {
-    std::fprintf(stderr, "usage: gg [-c] [-q] [-o <field>] '<query>' <file.gdml|->\n"
-                         "       gg [-c] [-q] [-o <field>] -e '<query>' [-e '<query>'...] <file>\n"
-                         "       gg <placement-tree|dead-defs|dangling> <file>\n"
-                         "       gg find-usages <name> <file>\n");
+    std::fprintf(stderr, "usage: gg [-c] [-q] [-o <field>] [--pretty] '<query>' <file.gdml|->\n"
+                         "       gg [flags] -e '<query>' [-e '<query>'...] <file>\n"
+                         "       gg [--pretty] <placement-tree|dead-defs|dangling> <file>\n"
+                         "       gg [--pretty] find-usages <name> <file>\n");
 }
 
 }  // namespace
 
 int main(int argc, char **argv) {
-    if (argc < 3) { usage(); return 2; }
+    Options opt;
+    std::vector<std::string> queries;
+    std::vector<const char *> positional;
+    for (int i = 1; i < argc; ++i) {
+        if (std::strcmp(argv[i], "-e") == 0 && i + 1 < argc) queries.push_back(argv[++i]);
+        else if (std::strcmp(argv[i], "-o") == 0 && i + 1 < argc) opt.field = argv[++i];
+        else if (std::strcmp(argv[i], "-c") == 0) opt.count = true;
+        else if (std::strcmp(argv[i], "-q") == 0) opt.quiet = true;
+        else if (std::strcmp(argv[i], "--pretty") == 0) opt.pretty = true;
+        else positional.push_back(argv[i]);
+    }
+    if (positional.empty()) { usage(); return 2; }
     try {
-        if (isVerb(argv[1])) return runVerb(argv[1], argv, argc);
-
-        Options opt;
-        std::vector<std::string> queries;
-        std::vector<const char *> positional;
-        for (int i = 1; i < argc; ++i) {
-            if (std::strcmp(argv[i], "-e") == 0 && i + 1 < argc) queries.push_back(argv[++i]);
-            else if (std::strcmp(argv[i], "-o") == 0 && i + 1 < argc) opt.field = argv[++i];
-            else if (std::strcmp(argv[i], "-c") == 0) opt.count = true;
-            else if (std::strcmp(argv[i], "-q") == 0) opt.quiet = true;
-            else positional.push_back(argv[i]);
-        }
+        if (isVerb(positional[0])) return runVerb(positional, opt.pretty);
         if (!queries.empty()) {
             if (positional.size() != 1) { usage(); return 2; }  // exactly the file
             return runQueries(queries, positional[0], opt);

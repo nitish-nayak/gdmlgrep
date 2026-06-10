@@ -18,11 +18,6 @@ constexpr const char *reset = "\033[0m", *dim = "\033[2m", *path = "\033[35m",
                      *value = "\033[32m";
 }
 
-// tree-sitter symbol id for a node-type name (0 if unknown).
-inline TSSymbol sym(const TSLanguage *l, const char *n) {
-    return ts_language_symbol_for_name(l, n, static_cast<uint32_t>(std::strlen(n)), true);
-}
-
 // Light syntax highlight of one GDML element line: dim punctuation, bold tag
 // name, cyan attribute names, green quoted values.
 inline std::string highlightGdml(std::string_view s) {
@@ -75,22 +70,36 @@ inline void emitLine(const Document &doc, TSNode n, bool pretty = false) {
 // A node's attribute value (quote-stripped): a real field (name/ref), else a
 // value_attribute / string_attribute child whose Name matches (x, rmax, unit...).
 inline std::optional<std::string> attrValue(const Document &doc, TSNode n, const std::string &field) {
-    const TSLanguage *lang = tree_sitter_gdml();
-    static TSSymbol va = sym(lang, "value_attribute");
-    static TSSymbol sa = sym(lang, "string_attribute");
     TSNode f = ts_node_child_by_field_name(n, field.c_str(), static_cast<uint32_t>(field.size()));
     if (!ts_node_is_null(f)) return std::string(doc.text(f, true));
     uint32_t c = ts_node_named_child_count(n);
     for (uint32_t i = 0; i < c; ++i) {
         TSNode ch = ts_node_named_child(n, i);
         TSSymbol s = ts_node_symbol(ch);
-        if (s != va && s != sa) continue;
+        if (s != kVALUE && s != kSTRING) continue;
         TSNode name = ts_node_named_child(ch, 0);
         if (ts_node_is_null(name) || doc.text(name) != field) continue;
         TSNode val = ts_node_child_by_field_name(ch, "value", 5);
         if (!ts_node_is_null(val)) return std::string(doc.text(val, true));
     }
     return std::nullopt;
+}
+
+// The expression node inside node's `field` value attribute (a value_attribute
+// whose gdml_value wraps an expression), or a null node if there isn't one.
+inline TSNode valueExprNode(const Document &doc, TSNode n, const std::string &field) {
+    uint32_t c = ts_node_named_child_count(n);
+    for (uint32_t i = 0; i < c; ++i) {
+        TSNode ch = ts_node_named_child(n, i);
+        if (ts_node_symbol(ch) != kVALUE) continue;
+        TSNode name = ts_node_named_child(ch, 0);
+        if (ts_node_is_null(name) || doc.text(name) != field) continue;
+        TSNode val = ts_node_child_by_field_name(ch, "value", 5);  // gdml_value
+        if (!ts_node_is_null(val) && ts_node_named_child_count(val) > 0)
+            return ts_node_named_child(val, 0);
+        return TSNode{};
+    }
+    return TSNode{};
 }
 
 // The value of a node's field for `-o`: "type" -> the element type; otherwise

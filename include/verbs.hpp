@@ -28,15 +28,6 @@ class Verbs {
 public:
     Verbs(const Document &doc, const PreWalk &index, bool pretty = false)
         : doc_(doc), index_(index), pretty_(pretty) {
-        const TSLanguage *lang = tree_sitter_gdml();
-        volumeref_ = sym(lang, "volumeref");
-        physvol_ = sym(lang, "physvol");
-        divisionvol_ = sym(lang, "divisionvol");
-        replicavol_ = sym(lang, "replicavol");
-        paramvol_ = sym(lang, "paramvol");
-        world_ = sym(lang, "world");
-        identifier_ = sym(lang, "identifier");
-        attribute_ = sym(lang, "Attribute");
     }
 
     void findUsages(const std::string &name) const { emitSorted(index_.uses(name)); }
@@ -70,7 +61,7 @@ public:
             for (TSNode v : defs) emitNode(v, "", 0, 0);
             return;
         }
-        TSNode world = findFirst(doc_.root(), world_);
+        TSNode world = findFirst(doc_.root(), kWORLD.id());
         if (ts_node_is_null(world)) return;
         auto refField = std::string(index_.fieldText(world, "ref"));
         for (TSNode v : index_.definitions(refField)) emitNode(v, "", 0, 0);
@@ -80,7 +71,6 @@ private:
     const Document &doc_;
     const PreWalk &index_;
     bool pretty_;
-    TSSymbol volumeref_, physvol_, divisionvol_, replicavol_, paramvol_, world_, identifier_, attribute_;
     std::set<std::string> visited_;  // placement-tree: volumes already expanded
 
     void emitSorted(const std::vector<TSNode> &nodes) const {
@@ -94,7 +84,7 @@ private:
         uint32_t c = ts_node_named_child_count(placement);
         for (uint32_t i = 0; i < c; ++i) {
             TSNode ch = ts_node_named_child(placement, i);
-            if (ts_node_symbol(ch) == volumeref_) return std::string(index_.fieldText(ch, "ref"));
+            if (ts_node_symbol(ch) == kVOLUMEREF) return std::string(index_.fieldText(ch, "ref"));
         }
         return {};
     }
@@ -120,7 +110,7 @@ private:
         for (uint32_t i = 0; i < c; ++i) {
             TSNode ch = ts_node_named_child(logical, i);
             TSSymbol s = ts_node_symbol(ch);
-            if((s != physvol_) && (s != divisionvol_) && (s != replicavol_) && (s != paramvol_))
+            if((s != kPHYSVOL) && (s != kDIVISIONVOL) && (s != kREPLICAVOL) && (s != kPARAMVOL))
                 continue;
             for (TSNode v : index_.definitions(placedName(ch))) placed.push_back(v);
         }
@@ -134,9 +124,9 @@ private:
     // non-ref-element tags (<fraction ref="U235">, <composite ref=...>).
     void collectUsed(TSNode n, std::set<std::string> &out) const {
         TSSymbol s = ts_node_symbol(n);
-        if (s == identifier_) {
+        if (s == kIDENTIFIER) {
             out.insert(std::string(doc_.text(n)));
-        } else if (s == attribute_ && ts_node_named_child_count(n) >= 2) {
+        } else if (s == kATTRIBUTE && ts_node_named_child_count(n) >= 2) {
             TSNode name = ts_node_named_child(n, 0);
             if (doc_.text(name) == "ref")
                 out.insert(std::string(doc_.text(ts_node_named_child(n, 1), true)));

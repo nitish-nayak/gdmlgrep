@@ -289,7 +289,6 @@ private:
     }
 
     void resolveSymbols() {
-        const TSLanguage *lang = tree_sitter_gdml();
         static const char *nonElements[] = {
             "document", "prolog", "XMLDecl", "doctypedecl", "content",
             "CharData", "Comment", "PI", "CDSect", "Reference", "EntityRef", "CharRef",
@@ -299,8 +298,8 @@ private:
             "STag", "ETag", "EmptyElemTag",
         };
         for (const char *name : nonElements) {
-            TSSymbol s = sym(lang, name);
-            if (s != 0) skip_.insert(s);
+            TSSymbol s = sym(name);
+            if(s) skip_.insert(s);
         }
     }
 };

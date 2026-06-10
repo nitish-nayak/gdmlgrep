@@ -26,38 +26,9 @@ namespace gg {
 
 constexpr double kPi = 3.14159265358979323846;  // CLHEP pi
 
-// The expression node inside node's `field` value attribute (a value_attribute
-// whose gdml_value wraps an expression), or a null node if there isn't one.
-inline TSNode valueExprNode(const Document &doc, TSNode n, const std::string &field) {
-    const TSLanguage *lang = tree_sitter_gdml();
-    static TSSymbol va = sym(lang, "value_attribute");
-    uint32_t c = ts_node_named_child_count(n);
-    for (uint32_t i = 0; i < c; ++i) {
-        TSNode ch = ts_node_named_child(n, i);
-        if (ts_node_symbol(ch) != va) continue;
-        TSNode name = ts_node_named_child(ch, 0);
-        if (ts_node_is_null(name) || doc.text(name) != field) continue;
-        TSNode val = ts_node_child_by_field_name(ch, "value", 5);  // gdml_value
-        if (!ts_node_is_null(val) && ts_node_named_child_count(val) > 0)
-            return ts_node_named_child(val, 0);
-        return TSNode{};
-    }
-    return TSNode{};
-}
-
 class Evaluator {
 public:
-    explicit Evaluator(const Document &doc) : doc_(doc) {
-        const TSLanguage *l = tree_sitter_gdml();
-        number_ = sym(l, "number");
-        identifier_ = sym(l, "identifier");
-        binary_ = sym(l, "binary_expression");
-        unary_ = sym(l, "unary_expression");
-        paren_ = sym(l, "parenthesized_expression");
-        call_ = sym(l, "call_expression");
-        constant_ = sym(l, "constant");
-        quantity_ = sym(l, "quantity");
-    }
+    explicit Evaluator(const Document &doc) : doc_(doc) {}
 
     std::optional<double> eval(TSNode n) {
         if (!built_) { built_ = true; collectConstants(doc_.root()); }
@@ -66,7 +37,6 @@ public:
 
 private:
     const Document &doc_;
-    TSSymbol number_, identifier_, binary_, unary_, paren_, call_, constant_, quantity_;
     std::map<std::string, TSNode> constExpr_;                   // <constant>/<quantity> name -> value expr
     std::map<std::string, std::optional<double>> cache_;
     std::set<std::string> inProgress_;                          // cycle guard
@@ -75,7 +45,7 @@ private:
     // <variable> is deliberately not collected -> references to it are unevaluable.
     void collectConstants(TSNode n) {
         TSSymbol s = ts_node_symbol(n);
-        if (s == constant_ || s == quantity_) {
+        if (s == kCONSTANT || s == kQUANTITY) {
             TSNode name = ts_node_child_by_field_name(n, "name", 4);
             TSNode expr = valueExprNode(doc_, n, "value");
             if (!ts_node_is_null(name) && !ts_node_is_null(expr))
@@ -88,17 +58,17 @@ private:
     std::optional<double> evalNode(TSNode n) {
         if (ts_node_is_null(n)) return std::nullopt;
         TSSymbol s = ts_node_symbol(n);
-        if (s == number_) return std::strtod(std::string(doc_.text(n)).c_str(), nullptr);
-        if (s == identifier_) return resolveIdent(std::string(doc_.text(n)));
-        if (s == paren_)
+        if (s == kNUMBER) return std::strtod(std::string(doc_.text(n)).c_str(), nullptr);
+        if (s == kIDENTIFIER) return resolveIdent(std::string(doc_.text(n)));
+        if (s == kPAREN)
             return ts_node_named_child_count(n) > 0 ? evalNode(ts_node_named_child(n, 0)) : std::nullopt;
-        if (s == unary_) {
+        if (s == kUNARY) {
             auto v = evalNode(ts_node_named_child(n, 0));
             if (!v) return std::nullopt;
             TSNode op = ts_node_child_by_field_name(n, "op", 2);
             return (!ts_node_is_null(op) && doc_.text(op) == "-") ? -*v : *v;
         }
-        if (s == binary_) {
+        if (s == kBINARY) {
             if (ts_node_named_child_count(n) < 2) return std::nullopt;
             auto a = evalNode(ts_node_named_child(n, 0));
             auto b = evalNode(ts_node_named_child(n, 1));
@@ -112,7 +82,7 @@ private:
             if (o == "^") return std::pow(*a, *b);
             return std::nullopt;
         }
-        if (s == call_) return evalCall(n);
+        if (s == kCALL) return evalCall(n);
         return std::nullopt;
     }
 

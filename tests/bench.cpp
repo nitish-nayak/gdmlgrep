@@ -5,7 +5,7 @@
 #include "document.hpp"
 #include "matchengine.hpp"
 #include "query/nfa.hpp"
-#include "query/query.hpp"
+#include "query/ast.hpp"
 
 #include <chrono>
 #include <cstdio>

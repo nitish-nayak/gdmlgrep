@@ -1,6 +1,6 @@
 #pragma once
 // prewalk.hpp — the pre-pass over the tree that builds the reference index the
-// MatchEngine consumes for the `=>` / `==>` deref axes and the find-usages verb.
+// MatchEngine consumes for the `=>` / `==>` deref connectors and the find-usages verb.
 //
 // GDML expresses nesting and composition by *reference*: a definition carries a
 // `name` field, and a reference element (volumeref, solidref, materialref,

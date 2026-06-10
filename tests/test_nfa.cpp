@@ -1,7 +1,7 @@
 // Dump test for Nfa: parse a query, build the Glushkov automaton, print it.
 //   test_nfa '<query>'
 #include "query/nfa.hpp"
-#include "query/query.hpp"
+#include "query/ast.hpp"
 
 #include <cstdio>
 #include <exception>

@@ -2,8 +2,8 @@
 // dfa.hpp — lazy subset construction over the Nfa's STRUCTURAL transitions.
 //
 // A DFA state is a set of NFA positions (sorted, interned to an int id). The
-// transition `step(s, sym, axis, withStart)` returns the id of the set reached
-// from `s` by following `axis` edges to positions matching node-type `sym`
+// transition `step(s, sym, connector, withStart)` returns the id of the set reached
+// from `s` by following `connector` edges to positions matching node-type `sym`
 // (plus the start positions, for floating Child steps). Transitions are
 // memoized, so once warmed each is an O(1) lookup — that is the whole point of
 // the DFA versus re-deriving the position set per node in NFA-simulation.
@@ -40,15 +40,15 @@ public:
     const State &state(int id) const { return states_[id]; }
     std::size_t numStates() const { return states_.size(); }
 
-    int step(int s, TSSymbol sym, LinkAxis axis, bool withStart) {
-        Key k{s, sym, axis == LinkAxis::Deref, withStart};
+    int step(int s, TSSymbol sym, LinkConnector connector, bool withStart) {
+        Key k{s, sym, connector == LinkConnector::Deref, withStart};
         auto it = trans_.find(k);
         if (it != trans_.end()) return it->second;
         std::set<int> out;
         for (int p : states_[s].pos)
             for (const Nfa::Edge &e : nfa_.follow(p))
-                if (e.axis == axis && matchSym(e.to, sym)) out.insert(e.to);
-        if (withStart && axis == LinkAxis::Child)
+                if (e.connector == connector && matchSym(e.to, sym)) out.insert(e.to);
+        if (withStart && connector == LinkConnector::Child)
             for (int q : nfa_.start())
                 if (matchSym(q, sym)) out.insert(q);
         int id = intern(std::vector<int>(out.begin(), out.end()));
@@ -68,7 +68,7 @@ public:
             if (P.accept) st.accept = true;
             if (!P.guards.empty()) st.guarded.push_back(p);
             for (const Nfa::Edge &e : nfa_.follow(p))
-                if (e.axis == LinkAxis::Deref) { st.hasDeref = true; break; }
+                if (e.connector == LinkConnector::Deref) { st.hasDeref = true; break; }
         }
         int id = static_cast<int>(states_.size());
         states_.push_back(std::move(st));

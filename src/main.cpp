@@ -14,7 +14,7 @@
 #include "document.hpp"
 #include "prewalk.hpp"
 #include "query/nfa.hpp"
-#include "query/query.hpp"
+#include "query/ast.hpp"
 #include "matchengine.hpp"
 #include "verbs.hpp"
 

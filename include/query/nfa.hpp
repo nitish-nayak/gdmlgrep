@@ -4,9 +4,9 @@
 // Each query Step becomes one position; a position carries the node-type it
 // matches (a tree-sitter TSSymbol, or a wildcard), the value-predicate guards
 // to check at match time, and an accept flag. The follow relation (the edges)
-// is labelled by the axis you traverse to reach the target — Child or Deref.
+// is labelled by the connector you traverse to reach the target — Child or Deref.
 //
-// The two closure axes are handled inline as if desugared:
+// The two closure connectors are handled inline as if desugared:
 //   A // B   ==   A /(*)%/ B          (proper descendant, >=1 child hop)
 //   A ==> B  ==   A =>(*)%=> B        (>=1 deref hop)
 // i.e. a synthetic starred-wildcard position sits between the operands, so the
@@ -20,7 +20,7 @@
 //
 // Lifetime: guards point into the Query's AST, so the Query must outlive the
 // Nfa and must not be modified after construction.
-#include "query.hpp"
+#include "ast.hpp"
 #include "grammar.hpp"
 
 #include <cstdint>
@@ -31,7 +31,7 @@
 
 namespace gg {
 
-enum class LinkAxis { Child, Deref };
+enum class LinkConnector { Child, Deref };
 
 class Nfa {
 public:
@@ -42,14 +42,14 @@ public:
         bool        accept = false;             // a final step of the query
         std::vector<const Predicate *> guards;  // value predicates, ANDed
     };
-    struct Edge { int to; LinkAxis axis; };
+    struct Edge { int to; LinkConnector connector; };
 
     Nfa(const Query &q, const TSLanguage *lang) : Nfa(*q.root, q.anchored, lang) {}
 
     // Core constructor — also used to compile a predicate's subpath (C3).
     Nfa(const Node &root, bool anchored, const TSLanguage *lang) : lang_(lang) {
         floating_ = !anchored;
-        Sets s = build(root, LinkAxis::Child);  // entry axis only matters for a bare top-level star
+        Sets s = build(root, LinkConnector::Child);  // entry connector only matters for a bare top-level star
         start_ = std::move(s.first);
         for (int p : s.last) pos_[p].accept = true;
     }
@@ -74,7 +74,7 @@ public:
             for (const Predicate *g : p.guards) std::fprintf(out, " %s", toString(*g).c_str());
             std::fprintf(out, "\n");
             for (const Edge &e : follow_[i])
-                std::fprintf(out, "        --%s--> %d\n", e.axis == LinkAxis::Child ? "/" : "=>", e.to);
+                std::fprintf(out, "        --%s--> %d\n", e.connector == LinkConnector::Child ? "/" : "=>", e.to);
         }
     }
 
@@ -89,7 +89,7 @@ private:
 
     struct Sets { bool nullable; std::vector<int> first; std::vector<int> last; };
 
-    static LinkAxis toLink(Axis a) { return a == Axis::Deref ? LinkAxis::Deref : LinkAxis::Child; }
+    static LinkConnector toLink(Connector a) { return a == Connector::Deref ? LinkConnector::Deref : LinkConnector::Child; }
     static void concat(std::vector<int> &dst, const std::vector<int> &src) {
         dst.insert(dst.end(), src.begin(), src.end());
     }
@@ -125,7 +125,7 @@ private:
         return static_cast<int>(pos_.size()) - 1;
     }
 
-    Sets build(const Node &n, LinkAxis entry) {
+    Sets build(const Node &n, LinkConnector entry) {
         Sets s{false, {}, {}};
         switch (n.kind) {
             case Node::Kind::Step:
@@ -144,41 +144,41 @@ private:
 
             case Node::Kind::Repeat: {
                 Sets x = build(*n.kids[0], entry);
-                if (n.quant != Quant::Opt)  // Star/Plus: loop back, re-entering via the entry axis
+                if (n.quant != Quantifier::Opt)  // Star/Plus: loop back, re-entering via the entry connector
                     for (int p : x.last)
                         for (int q : x.first)
                             follow_[p].push_back({q, entry});
-                s.nullable = (n.quant != Quant::Plus) || x.nullable;
+                s.nullable = (n.quant != Quantifier::Plus) || x.nullable;
                 s.first = x.first;
                 s.last = x.last;
                 break;
             }
 
             case Node::Kind::Seq:
-                if (n.axis == Axis::Child || n.axis == Axis::Deref) {
-                    LinkAxis ax = toLink(n.axis);
-                    if (ax == LinkAxis::Deref) needsDeref_ = true;
+                if (n.connector == Connector::Child || n.connector == Connector::Deref) {
+                    LinkConnector connector = toLink(n.connector);
+                    if (connector == LinkConnector::Deref) needsDeref_ = true;
                     Sets a = build(*n.kids[0], entry);
-                    Sets b = build(*n.kids[1], ax);
+                    Sets b = build(*n.kids[1], connector);
                     for (int p : a.last)
-                        for (int q : b.first) follow_[p].push_back({q, ax});
+                        for (int q : b.first) follow_[p].push_back({q, connector});
                     s.nullable = a.nullable && b.nullable;
                     s.first = a.first;
                     if (a.nullable) concat(s.first, b.first);
                     s.last = b.last;
                     if (b.nullable) concat(s.last, a.last);
                 } else {  // Descendant / DerefClosure: A hop (w)% hop B, with (w)% nullable
-                    LinkAxis ax = (n.axis == Axis::Descendant) ? LinkAxis::Child : LinkAxis::Deref;
-                    if (ax == LinkAxis::Deref) needsDeref_ = true;
+                    LinkConnector connector = (n.connector == Connector::Descendant) ? LinkConnector::Child : LinkConnector::Deref;
+                    if (connector == LinkConnector::Deref) needsDeref_ = true;
                     Sets a = build(*n.kids[0], entry);
                     int w = newWildcard();
-                    follow_[w].push_back({w, ax});  // (w)% self-loop
-                    Sets b = build(*n.kids[1], ax);
+                    follow_[w].push_back({w, connector});  // (w)% self-loop
+                    Sets b = build(*n.kids[1], connector);
                     for (int p : a.last) {
-                        follow_[p].push_back({w, ax});
-                        for (int q : b.first) follow_[p].push_back({q, ax});
+                        follow_[p].push_back({w, connector});
+                        for (int q : b.first) follow_[p].push_back({q, connector});
                     }
-                    for (int q : b.first) follow_[w].push_back({q, ax});
+                    for (int q : b.first) follow_[w].push_back({q, connector});
                     std::vector<int> innerFirst{w};
                     concat(innerFirst, b.first);
                     std::vector<int> innerLast = b.last;

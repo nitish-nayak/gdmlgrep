@@ -6,7 +6,7 @@
 // Floating queries (the default) attempt a fresh start at every node during
 // that single pass (P1: O(n), not a re-walk per node); anchored queries start
 // only at the root. Deref edges jump through the PreWalk reference index (built
-// lazily, only when the query uses a deref axis), so the walk is over a graph —
+// lazily, only when the query uses a deref connector), so the walk is over a graph —
 // `continueDfaWalk` is visited-guarded on (state, node) to break deref cycles
 // and shared targets. Matched (accept) nodes are deduped and returned in
 // document order.
@@ -58,7 +58,7 @@ public:
         uneval_.clear();
         found_ = false;
         TSNode root = doc_.root();
-        int s = dfa_->step(dfa_->empty(), ts_node_symbol(root), LinkAxis::Child, true);
+        int s = dfa_->step(dfa_->empty(), ts_node_symbol(root), LinkConnector::Child, true);
         walkDfa(root, guardFilterDfa(s, root));
         return collect();
     }
@@ -103,7 +103,7 @@ private:
         if (st.accept) record(n);
         if (st.hasDeref && index_) {
             for (TSNode d : gatherDeref(n)) {
-                int da = guardFilterDfa(dfa_->step(active, ts_node_symbol(d), LinkAxis::Deref, false), d);
+                int da = guardFilterDfa(dfa_->step(active, ts_node_symbol(d), LinkConnector::Deref, false), d);
                 if (!dfa_->state(da).pos.empty()) continueDfaWalk(d, da);
                 if (stopAtFirst_ && found_) return;
             }
@@ -111,7 +111,7 @@ private:
         uint32_t c = ts_node_named_child_count(n);
         for (uint32_t i = 0; i < c; ++i) {
             TSNode ch = ts_node_named_child(n, i);
-            int s = dfa_->step(active, ts_node_symbol(ch), LinkAxis::Child, nfa_.floating());
+            int s = dfa_->step(active, ts_node_symbol(ch), LinkConnector::Child, nfa_.floating());
             walkDfa(ch, guardFilterDfa(s, ch));
             if (stopAtFirst_ && found_) return;
         }
@@ -123,7 +123,7 @@ private:
         if (st.accept) record(n);
         if (st.hasDeref && index_) {
             for (TSNode d : gatherDeref(n)) {
-                int da = guardFilterDfa(dfa_->step(active, ts_node_symbol(d), LinkAxis::Deref, false), d);
+                int da = guardFilterDfa(dfa_->step(active, ts_node_symbol(d), LinkConnector::Deref, false), d);
                 if (!dfa_->state(da).pos.empty()) continueDfaWalk(d, da);
                 if (stopAtFirst_ && found_) return;
             }
@@ -131,7 +131,7 @@ private:
         uint32_t c = ts_node_named_child_count(n);
         for (uint32_t i = 0; i < c; ++i) {
             TSNode ch = ts_node_named_child(n, i);
-            int a = guardFilterDfa(dfa_->step(active, ts_node_symbol(ch), LinkAxis::Child, false), ch);
+            int a = guardFilterDfa(dfa_->step(active, ts_node_symbol(ch), LinkConnector::Child, false), ch);
             if (!dfa_->state(a).pos.empty()) continueDfaWalk(ch, a);
             if (stopAtFirst_ && found_) return;
         }
@@ -180,7 +180,7 @@ private:
         std::optional<std::string> at = attrText(n, p.field);
         if (!at) return Tri::False;  // attribute absent -> does not match
         const std::string &av = *at;
-        if (p.op == CmpOp::Regex)
+        if (p.op == Comparator::Regex)
             return std::regex_search(av, regexFor(p)) ? Tri::True : Tri::False;
 
         double pv;
@@ -188,18 +188,18 @@ private:
             double lv;
             if (!numericValue(n, p.field, av, lv)) { recordUneval(p, n); return Tri::Unknown; }
             switch (p.op) {
-                case CmpOp::Eq: return tri(lv == pv);
-                case CmpOp::Ne: return tri(lv != pv);
-                case CmpOp::Lt: return tri(lv < pv);
-                case CmpOp::Le: return tri(lv <= pv);
-                case CmpOp::Gt: return tri(lv > pv);
-                case CmpOp::Ge: return tri(lv >= pv);
+                case Comparator::Eq: return tri(lv == pv);
+                case Comparator::Ne: return tri(lv != pv);
+                case Comparator::Lt: return tri(lv < pv);
+                case Comparator::Le: return tri(lv <= pv);
+                case Comparator::Gt: return tri(lv > pv);
+                case Comparator::Ge: return tri(lv >= pv);
                 default: return Tri::False;
             }
         }
         switch (p.op) {  // textual intent (RHS is not a number)
-            case CmpOp::Eq: return tri(av == p.value);
-            case CmpOp::Ne: return tri(av != p.value);
+            case Comparator::Eq: return tri(av == p.value);
+            case Comparator::Ne: return tri(av != p.value);
             default: recordUneval(p, n); return Tri::Unknown;  // ordering on non-numeric
         }
     }
@@ -251,7 +251,7 @@ private:
         uint32_t c = ts_node_named_child_count(n);
         for (uint32_t i = 0; i < c && !found_; ++i) {
             TSNode ch = ts_node_named_child(n, i);
-            int s = dfa_->step(dfa_->empty(), ts_node_symbol(ch), LinkAxis::Child, true);
+            int s = dfa_->step(dfa_->empty(), ts_node_symbol(ch), LinkConnector::Child, true);
             walkDfa(ch, guardFilterDfa(s, ch));
         }
         return found_;

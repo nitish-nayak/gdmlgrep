@@ -75,7 +75,7 @@ inline void emitLine(const Document &doc, TSNode n, bool pretty = false) {
 // A node's attribute value (quote-stripped): a real field (name/ref), else a
 // value_attribute / string_attribute child whose Name matches (x, rmax, unit...).
 inline std::optional<std::string> attrValue(const Document &doc, TSNode n, const std::string &field) {
-    static const TSLanguage *lang = tree_sitter_gdml();
+    const TSLanguage *lang = tree_sitter_gdml();
     static TSSymbol va = sym(lang, "value_attribute");
     static TSSymbol sa = sym(lang, "string_attribute");
     TSNode f = ts_node_child_by_field_name(n, field.c_str(), static_cast<uint32_t>(field.size()));

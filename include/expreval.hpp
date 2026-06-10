@@ -29,7 +29,7 @@ constexpr double kPi = 3.14159265358979323846;  // CLHEP pi
 // The expression node inside node's `field` value attribute (a value_attribute
 // whose gdml_value wraps an expression), or a null node if there isn't one.
 inline TSNode valueExprNode(const Document &doc, TSNode n, const std::string &field) {
-    static const TSLanguage *lang = tree_sitter_gdml();
+    const TSLanguage *lang = tree_sitter_gdml();
     static TSSymbol va = sym(lang, "value_attribute");
     uint32_t c = ts_node_named_child_count(n);
     for (uint32_t i = 0; i < c; ++i) {

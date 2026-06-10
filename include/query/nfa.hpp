@@ -21,7 +21,7 @@
 // Lifetime: guards point into the Query's AST, so the Query must outlive the
 // Nfa and must not be modified after construction.
 #include "query.hpp"
-#include "ast.hpp"
+#include "grammar.hpp"
 
 #include <cstdint>
 #include <cstdio>

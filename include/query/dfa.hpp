@@ -14,7 +14,7 @@
 // table-driven. Each state caches whether it accepts, whether it has any deref
 // edge, and which of its positions carry guards.
 #include "nfa.hpp"
-#include "ast.hpp"
+#include "grammar.hpp"
 
 #include <map>
 #include <set>

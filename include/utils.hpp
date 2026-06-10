@@ -1,6 +1,6 @@
 #pragma once
 
-#include "query/ast.hpp"
+#include "query/grammar.hpp"
 #include "document.hpp"
 
 #include <cctype>

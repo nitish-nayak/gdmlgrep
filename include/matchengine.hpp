@@ -22,6 +22,7 @@
 #include "nfa.hpp"
 #include "prewalk.hpp"
 #include "ts.hpp"
+#include "utils.hpp"
 
 #include <cstdint>
 #include <cstdlib>
@@ -71,7 +72,6 @@ private:
     const Nfa &nfa_;
     std::unique_ptr<PreWalk> indexOwned_;
     PreWalk *index_ = nullptr;
-    TSSymbol valueAttrSym_ = 0, stringAttrSym_ = 0;
     std::set<TSSymbol> skip_;                                   // non-element node types
     std::map<std::pair<uint32_t, uint32_t>, TSNode> matches_;   // (start,end) -> node
     std::vector<std::pair<std::string, TSNode>> uneval_;
@@ -219,19 +219,7 @@ private:
     // Attribute value text (quote-stripped): a real field (name/ref), else a
     // value_attribute / string_attribute child whose Name matches (C2).
     std::optional<std::string> attrText(TSNode n, const std::string &field) const {
-        TSNode f = ts_node_child_by_field_name(n, field.c_str(), static_cast<uint32_t>(field.size()));
-        if (!ts_node_is_null(f)) return std::string(doc_.text(f, true));
-        uint32_t c = ts_node_named_child_count(n);
-        for (uint32_t i = 0; i < c; ++i) {
-            TSNode child = ts_node_named_child(n, i);
-            TSSymbol sym = ts_node_symbol(child);
-            if (sym != valueAttrSym_ && sym != stringAttrSym_) continue;
-            TSNode nameN = ts_node_named_child(child, 0);
-            if (ts_node_is_null(nameN) || doc_.text(nameN) != field) continue;
-            TSNode val = ts_node_child_by_field_name(child, "value", 5);
-            if (!ts_node_is_null(val)) return std::string(doc_.text(val, true));
-        }
-        return std::nullopt;
+        return attrValue(doc_, n, field);
     }
 
     const std::regex &regexFor(const Predicate &p) {
@@ -303,8 +291,6 @@ private:
 
     void resolveSymbols() {
         const TSLanguage *lang = tree_sitter_gdml();
-        valueAttrSym_ = ts_language_symbol_for_name(lang, "value_attribute", 15, true);
-        stringAttrSym_ = ts_language_symbol_for_name(lang, "string_attribute", 16, true);
         static const char *nonElements[] = {
             "document", "prolog", "XMLDecl", "doctypedecl", "content",
             "CharData", "Comment", "PI", "CDSect", "Reference", "EntityRef", "CharRef",
@@ -314,7 +300,7 @@ private:
             "STag", "ETag", "EmptyElemTag",
         };
         for (const char *name : nonElements) {
-            TSSymbol s = ts_language_symbol_for_name(lang, name, static_cast<uint32_t>(std::strlen(name)), true);
+            TSSymbol s = sym(lang, name);
             if (s != 0) skip_.insert(s);
         }
     }

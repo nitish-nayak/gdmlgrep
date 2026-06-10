@@ -21,6 +21,11 @@ constexpr const char *reset = "\033[0m", *dim = "\033[2m", *path = "\033[35m",
                      *value = "\033[32m";
 }
 
+// tree-sitter symbol id for a node-type name (0 if unknown).
+inline TSSymbol sym(const TSLanguage *l, const char *n) {
+    return ts_language_symbol_for_name(l, n, static_cast<uint32_t>(std::strlen(n)), true);
+}
+
 // Light syntax highlight of one GDML element line: dim punctuation, bold tag
 // name, cyan attribute names, green quoted values.
 inline std::string highlightGdml(std::string_view s) {
@@ -70,13 +75,12 @@ inline void emitLine(const Document &doc, TSNode n, bool pretty = false) {
                 ansi::lineno, doc.line(n), ansi::reset, highlightGdml(t).c_str());
 }
 
-// The value of a node's field for `-o`: "type" -> the element type; a real
-// field (name/ref); else a value/string_attribute child (x, rmax, unit, ...).
-inline std::optional<std::string> fieldOf(const Document &doc, TSNode n, const std::string &field) {
-    if (field == "type") return std::string(ts_node_type(n));
+// A node's attribute value (quote-stripped): a real field (name/ref), else a
+// value_attribute / string_attribute child whose Name matches (x, rmax, unit...).
+inline std::optional<std::string> attrValue(const Document &doc, TSNode n, const std::string &field) {
     static const TSLanguage *lang = tree_sitter_gdml();
-    static TSSymbol va = ts_language_symbol_for_name(lang, "value_attribute", 15, true);
-    static TSSymbol sa = ts_language_symbol_for_name(lang, "string_attribute", 16, true);
+    static TSSymbol va = sym(lang, "value_attribute");
+    static TSSymbol sa = sym(lang, "string_attribute");
     TSNode f = ts_node_child_by_field_name(n, field.c_str(), static_cast<uint32_t>(field.size()));
     if (!ts_node_is_null(f)) return std::string(doc.text(f, true));
     uint32_t c = ts_node_named_child_count(n);
@@ -92,8 +96,11 @@ inline std::optional<std::string> fieldOf(const Document &doc, TSNode n, const s
     return std::nullopt;
 }
 
-static TSSymbol sym(const TSLanguage *l, const char *n) {
-    return ts_language_symbol_for_name(l, n, static_cast<uint32_t>(std::strlen(n)), true);
+// The value of a node's field for `-o`: "type" -> the element type; otherwise
+// the attribute value (attrValue).
+inline std::optional<std::string> fieldOf(const Document &doc, TSNode n, const std::string &field) {
+    if (field == "type") return std::string(ts_node_type(n));
+    return attrValue(doc, n, field);
 }
 
 }  // namespace gg

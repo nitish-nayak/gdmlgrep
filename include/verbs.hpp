@@ -46,21 +46,21 @@ public:
     void findUsages(const std::string &name) const { emitSorted(index_.uses(name)); }
 
     void dangling() const {
-        std::map<std::pair<uint32_t, uint32_t>, TSNode> out;
+        std::vector<TSNode> out;
         for (const auto &[name, nodes] : index_.allUses())
             if (index_.definitions(name).empty())
-                for (TSNode n : nodes) out.emplace(std::make_pair(ts_node_start_byte(n), ts_node_end_byte(n)), n);
-        for (auto &kv : out) emitLine(doc_, kv.second, pretty_);
+                for (TSNode n : nodes) out.push_back(n);
+        emitSorted(out);
     }
 
     void deadDefs() const {
         std::set<std::string> used;
         collectUsed(doc_.root(), used);
-        std::map<std::pair<uint32_t, uint32_t>, TSNode> out;
+        std::vector<TSNode> out;
         for (const auto &[name, nodes] : index_.allDefs())
             if (index_.uses(name).empty() && !used.count(name))
-                for (TSNode n : nodes) out.emplace(std::make_pair(ts_node_start_byte(n), ts_node_end_byte(n)), n);
-        for (auto &kv : out) emitLine(doc_, kv.second, pretty_);
+                for (TSNode n : nodes) out.push_back(n);
+        emitSorted(out);
     }
 
     // Root at <world> by default, or at a named volume when one is given.
@@ -142,11 +142,8 @@ private:
             out.insert(std::string(doc_.text(n)));
         } else if (s == attribute_ && ts_node_named_child_count(n) >= 2) {
             TSNode name = ts_node_named_child(n, 0);
-            if (doc_.text(name) == "ref") {
-                std::string_view v = doc_.text(ts_node_named_child(n, 1));
-                if (v.size() >= 2 && (v.front() == '"' || v.front() == '\'')) v = v.substr(1, v.size() - 2);
-                out.insert(std::string(v));
-            }
+            if (doc_.text(name) == "ref")
+                out.insert(std::string(doc_.text(ts_node_named_child(n, 1), true)));
         }
         uint32_t c = ts_node_named_child_count(n);
         for (uint32_t i = 0; i < c; ++i) collectUsed(ts_node_named_child(n, i), out);

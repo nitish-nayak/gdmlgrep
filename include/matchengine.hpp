@@ -18,7 +18,7 @@
 // diagnostic. Existence guards `[subpath]` run a sub-engine rooted at the node.
 #include "query/dfa.hpp"
 #include "query/nfa.hpp"
-#include "query/ts.hpp"
+#include "query/ast.hpp"
 #include "document.hpp"
 #include "expreval.hpp"
 #include "prewalk.hpp"

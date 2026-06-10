@@ -1,15 +1,12 @@
 #pragma once
 
 #include "document.hpp"
-#include "prewalk.hpp"
 #include "ts.hpp"
 
 #include <cctype>
 #include <cstdio>
 #include <cstring>
-#include <map>
 #include <optional>
-#include <set>
 #include <string>
 #include <string_view>
 

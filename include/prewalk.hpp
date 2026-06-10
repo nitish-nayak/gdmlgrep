@@ -38,6 +38,14 @@ public:
     const std::unordered_map<std::string, std::vector<TSNode>> &allDefs() const { return defs_; }
     const std::unordered_map<std::string, std::vector<TSNode>> &allUses() const { return uses_; }
 
+    // Text of a node's named field (e.g. name="World" -> World), quote-stripped.
+    std::string_view fieldText(TSNode n, const char *field) const {
+        TSNode f = ts_node_child_by_field_name(n, field, (uint32_t)std::strlen(field));
+        if (ts_node_is_null(f)) return {};
+        return doc_.text(f, true);
+    }
+
+
 private:
     const Document &doc_;
     std::unordered_map<std::string, std::vector<TSNode>> defs_;
@@ -49,13 +57,6 @@ private:
         if (auto ref  = fieldText(n, "ref");  !ref.empty())  uses_[std::string(ref)].push_back(n);
         uint32_t c = ts_node_named_child_count(n);
         for (uint32_t i = 0; i < c; ++i) build(ts_node_named_child(n, i));
-    }
-
-    // Text of a node's named field (e.g. name="World" -> World), quote-stripped.
-    std::string_view fieldText(TSNode n, const char *field) const {
-        TSNode f = ts_node_child_by_field_name(n, field, (uint32_t)std::strlen(field));
-        if (ts_node_is_null(f)) return {};
-        return doc_.text(f, true);
     }
 
     static const std::vector<TSNode> &lookup(

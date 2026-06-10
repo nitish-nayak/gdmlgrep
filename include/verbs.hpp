@@ -76,7 +76,8 @@ public:
         }
         TSNode world = findFirst(doc_.root(), world_);
         if (ts_node_is_null(world)) return;
-        for (TSNode v : index_.definitions(refField(world))) emitNode(v, "", 0, 0);
+        auto refField = std::string(index_.fieldText(world, "ref"));
+        for (TSNode v : index_.definitions(refField)) emitNode(v, "", 0, 0);
     }
 
 private:
@@ -86,26 +87,10 @@ private:
     TSSymbol volumeref_, physvol_, divisionvol_, replicavol_, paramvol_, world_, identifier_, attribute_;
     std::set<std::string> visited_;  // placement-tree: volumes already expanded
 
-    static TSSymbol sym(const TSLanguage *l, const char *n) {
-        return ts_language_symbol_for_name(l, n, static_cast<uint32_t>(std::strlen(n)), true);
-    }
-
     void emitSorted(const std::vector<TSNode> &nodes) const {
         std::map<std::pair<uint32_t, uint32_t>, TSNode> out;
         for (TSNode n : nodes) out.emplace(std::make_pair(ts_node_start_byte(n), ts_node_end_byte(n)), n);
         for (auto &kv : out) emitLine(doc_, kv.second, pretty_);
-    }
-
-    std::string fieldText(TSNode n, const char *field) const {
-        TSNode f = ts_node_child_by_field_name(n, field, static_cast<uint32_t>(std::strlen(field)));
-        if (ts_node_is_null(f)) return {};
-        return std::string(doc_.text(f, true));
-    }
-    std::string nameField(TSNode n) const { return fieldText(n, "name"); }
-    std::string refField(TSNode n) const { return fieldText(n, "ref"); }
-
-    bool isPlacement(TSSymbol s) const {
-        return s == physvol_ || s == divisionvol_ || s == replicavol_ || s == paramvol_;
     }
 
     // The volume/assembly a placement node refers to, via its volumeref child.
@@ -113,7 +98,7 @@ private:
         uint32_t c = ts_node_named_child_count(placement);
         for (uint32_t i = 0; i < c; ++i) {
             TSNode ch = ts_node_named_child(placement, i);
-            if (ts_node_symbol(ch) == volumeref_) return refField(ch);
+            if (ts_node_symbol(ch) == volumeref_) return std::string(index_.fieldText(ch, "ref"));
         }
         return {};
     }
@@ -122,7 +107,7 @@ private:
     // root, 1 = mid sibling |--, 2 = last `--). Plain: depth-indented names,
     // no Unicode, so it pipes cleanly. Shared subtrees collapse with "(see above)".
     void emitNode(TSNode logical, const std::string &prefix, int kind, int depth) {
-        std::string name = nameField(logical);
+        std::string name = std::string(index_.fieldText(logical, "name"));
         if (pretty_) {
             const char *conn = kind == 0 ? "" : kind == 2 ? "└── " : "├── ";
             std::printf("%s%s%s%s%s", prefix.c_str(), conn, ansi::tag, name.c_str(), ansi::reset);
@@ -138,7 +123,9 @@ private:
         uint32_t c = ts_node_named_child_count(logical);
         for (uint32_t i = 0; i < c; ++i) {
             TSNode ch = ts_node_named_child(logical, i);
-            if (!isPlacement(ts_node_symbol(ch))) continue;
+            TSSymbol s = ts_node_symbol(ch);
+            if((s != physvol_) && (s != divisionvol_) && (s != replicavol_) && (s != paramvol_))
+                continue;
             for (TSNode v : index_.definitions(placedName(ch))) placed.push_back(v);
         }
         std::string childPrefix = prefix + (kind == 0 ? "" : kind == 2 ? "    " : "│   ");

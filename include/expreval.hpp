@@ -12,6 +12,7 @@
 // are intentionally not done here.
 #include "document.hpp"
 #include "ts.hpp"
+#include "utils.hpp"
 
 #include <cmath>
 #include <cstdlib>
@@ -72,10 +73,6 @@ private:
     std::map<std::string, std::optional<double>> cache_;
     std::set<std::string> inProgress_;                          // cycle guard
     bool built_ = false;
-
-    static TSSymbol sym(const TSLanguage *l, const char *n) {
-        return ts_language_symbol_for_name(l, n, static_cast<uint32_t>(std::strlen(n)), true);
-    }
 
     // <variable> is deliberately not collected -> references to it are unevaluable.
     void collectConstants(TSNode n) {

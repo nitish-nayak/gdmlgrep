@@ -30,9 +30,9 @@ public:
     std::string_view text(TSNode n, bool strip_quotes=false) const {
         uint32_t a = ts_node_start_byte(n), b = ts_node_end_byte(n);
         auto t = std::string_view(source_).substr(a, b - a);
-        if(!strip_quotes) return t;
-        if (t.size() >= 2 && (t.front() == '"' || t.front() == '\''))
+        if (t.size() >= 2 && (t.front() == '"' || t.front() == '\'') && strip_quotes)
             return t.substr(1, t.size() - 2);
+        return t;
     }
 
     // 1-based line of a node's start, for grep-style output.

@@ -92,4 +92,8 @@ inline std::optional<std::string> fieldOf(const Document &doc, TSNode n, const s
     return std::nullopt;
 }
 
+static TSSymbol sym(const TSLanguage *l, const char *n) {
+    return ts_language_symbol_for_name(l, n, static_cast<uint32_t>(std::strlen(n)), true);
+}
+
 }  // namespace gg

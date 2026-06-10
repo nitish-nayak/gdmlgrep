@@ -5,8 +5,8 @@
 //   test_match <simple.gdml>
 #include "document.hpp"
 #include "matchengine.hpp"
-#include "nfa.hpp"
-#include "query.hpp"
+#include "query/nfa.hpp"
+#include "query/query.hpp"
 
 #include <cstdio>
 #include <exception>

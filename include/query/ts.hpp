@@ -5,7 +5,7 @@
 
 #include <memory>
 
-// Defined in the vendored, generated grammar (vendor/grammar/parser.c).
+// Defined in the vendored, generated grammar (externals/grammar/parser.c).
 extern "C" const TSLanguage *tree_sitter_gdml(void);
 
 namespace gg {

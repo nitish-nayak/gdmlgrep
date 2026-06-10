@@ -12,9 +12,9 @@
 //
 // dead-defs also scans expression `identifier` nodes, since constants/variables
 // are referenced from expressions (value="pi/2.") rather than via a ref field.
+#include "query/ts.hpp"
 #include "document.hpp"
 #include "prewalk.hpp"
-#include "ts.hpp"
 #include "utils.hpp"
 
 #include <cstdio>

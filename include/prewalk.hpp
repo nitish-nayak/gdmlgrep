@@ -17,8 +17,8 @@
 // Scope note: only structural `ref`-field references are captured here.
 // Constants referenced inside expressions (via `identifier` nodes, not a `ref`
 // field) are resolved separately by expression evaluation, not this index.
+#include "query/ts.hpp"
 #include "document.hpp"
-#include "ts.hpp"
 
 #include <cstring>
 #include <string>

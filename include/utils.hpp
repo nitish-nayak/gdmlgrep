@@ -1,7 +1,7 @@
 #pragma once
 
+#include "query/ts.hpp"
 #include "document.hpp"
-#include "ts.hpp"
 
 #include <cctype>
 #include <cstdio>

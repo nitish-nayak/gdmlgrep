@@ -2,7 +2,7 @@
 // A parsed GDML document: owns the source text and the tree-sitter tree, and
 // answers node-level questions (type, source text, line) against them. The
 // source string outlives the tree, so node text is returned as a view into it.
-#include "ts.hpp"
+#include "query/ts.hpp"
 
 #include <fstream>
 #include <iostream>

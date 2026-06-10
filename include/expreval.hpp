@@ -10,8 +10,8 @@
 // caller treats nullopt as "unevaluable" and surfaces a diagnostic rather than
 // silently failing the match. Unit resolution and <variable>/<loop> evaluation
 // are intentionally not done here.
+#include "query/ts.hpp"
 #include "document.hpp"
-#include "ts.hpp"
 #include "utils.hpp"
 
 #include <cmath>

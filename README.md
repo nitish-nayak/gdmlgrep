@@ -17,7 +17,7 @@ cmake --build build
 ```
 
 Produces `build/gg`. No network needed: the tree-sitter runtime and the GDML
-grammar are vendored under `vendor/`.
+grammar are vendored under `externals/`.
 
 ## Usage (scaffold)
 
@@ -28,8 +28,8 @@ cat file.gdml | ./build/gg -     # read from stdin
 
 ## Layout
 
-- `vendor/tree-sitter/` — tree-sitter C runtime (v0.25.6)
-- `vendor/grammar/` — the generated GDML grammar (`parser.c`, `scanner.c`)
+- `externals/tree-sitter/` — tree-sitter C runtime (v0.25.6)
+- `externals/grammar/` — the generated GDML grammar (`parser.c`, `scanner.c`)
 - `include/` — header-only engine: `Document`, and (later) the query parser,
   name index, and query engine
 - `src/main.cpp` — the CLI

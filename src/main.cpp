@@ -10,13 +10,13 @@
 // and each query runs against the shared tree, each block headed "==> q <==".
 // Query mode follows grep exit codes (0 = matches, 1 = none, 2 = error); verbs
 // return 0 on success, 2 on error.
-#include "document.hpp"
-#include "matchengine.hpp"
-#include "nfa.hpp"
-#include "prewalk.hpp"
-#include "query.hpp"
-#include "verbs.hpp"
 #include "utils.hpp"
+#include "document.hpp"
+#include "prewalk.hpp"
+#include "query/nfa.hpp"
+#include "query/query.hpp"
+#include "matchengine.hpp"
+#include "verbs.hpp"
 
 #include <cstdio>
 #include <cstring>

@@ -16,12 +16,12 @@
 // unevaluable guard (e.g. a numeric compare against an expression we can't yet
 // evaluate) is never a silent no-match — it is excluded but recorded for a
 // diagnostic. Existence guards `[subpath]` run a sub-engine rooted at the node.
-#include "dfa.hpp"
+#include "query/dfa.hpp"
+#include "query/nfa.hpp"
+#include "query/ts.hpp"
 #include "document.hpp"
 #include "expreval.hpp"
-#include "nfa.hpp"
 #include "prewalk.hpp"
-#include "ts.hpp"
 #include "utils.hpp"
 
 #include <cstdint>

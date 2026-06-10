@@ -8,16 +8,16 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 # Vendored tree-sitter runtime (lib.c amalgamates the rest of src/).
-add_library(tree-sitter STATIC vendor/tree-sitter/src/lib.c)
+add_library(tree-sitter STATIC externals/tree-sitter/src/lib.c)
 target_include_directories(tree-sitter
-  PUBLIC  vendor/tree-sitter/include
-  PRIVATE vendor/tree-sitter/src)
+  PUBLIC  externals/tree-sitter/include
+  PRIVATE externals/tree-sitter/src)
 
 # Vendored, generated GDML grammar.
 add_library(gdml-grammar STATIC
-  vendor/grammar/parser.c
-  vendor/grammar/scanner.c)
-target_include_directories(gdml-grammar PRIVATE vendor/grammar)
+  externals/grammar/parser.c
+  externals/grammar/scanner.c)
+target_include_directories(gdml-grammar PRIVATE externals/grammar)
 
 # libgg: the header-only engine.
 add_library(gg-engine INTERFACE)

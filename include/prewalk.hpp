@@ -55,9 +55,7 @@ private:
     std::string_view fieldText(TSNode n, const char *field) const {
         TSNode f = ts_node_child_by_field_name(n, field, (uint32_t)std::strlen(field));
         if (ts_node_is_null(f)) return {};
-        std::string_view t = doc_.text(f);
-        if (t.size() >= 2 && (t.front() == '"' || t.front() == '\'')) t = t.substr(1, t.size() - 2);
-        return t;
+        return doc_.text(f, true);
     }
 
     static const std::vector<TSNode> &lookup(

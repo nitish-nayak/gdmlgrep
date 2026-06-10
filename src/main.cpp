@@ -16,6 +16,7 @@
 #include "prewalk.hpp"
 #include "query.hpp"
 #include "verbs.hpp"
+#include "utils.hpp"
 
 #include <cstdio>
 #include <cstring>

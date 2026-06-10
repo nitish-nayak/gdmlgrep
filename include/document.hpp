@@ -27,9 +27,12 @@ public:
     const std::string &source() const { return source_; }
 
     // The source text a node spans (a view into source_, no copy).
-    std::string_view text(TSNode n) const {
+    std::string_view text(TSNode n, bool strip_quotes=false) const {
         uint32_t a = ts_node_start_byte(n), b = ts_node_end_byte(n);
-        return std::string_view(source_).substr(a, b - a);
+        auto t = std::string_view(source_).substr(a, b - a);
+        if(!strip_quotes) return t;
+        if (t.size() >= 2 && (t.front() == '"' || t.front() == '\''))
+            return t.substr(1, t.size() - 2);
     }
 
     // 1-based line of a node's start, for grep-style output.

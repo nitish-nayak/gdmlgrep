@@ -76,11 +76,6 @@ private:
     static TSSymbol sym(const TSLanguage *l, const char *n) {
         return ts_language_symbol_for_name(l, n, static_cast<uint32_t>(std::strlen(n)), true);
     }
-    std::string text(TSNode n) const { return std::string(doc_.text(n)); }
-    static std::string stripQuotes(std::string_view t) {
-        if (t.size() >= 2 && (t.front() == '"' || t.front() == '\'')) t = t.substr(1, t.size() - 2);
-        return std::string(t);
-    }
 
     // <variable> is deliberately not collected -> references to it are unevaluable.
     void collectConstants(TSNode n) {
@@ -89,7 +84,7 @@ private:
             TSNode name = ts_node_child_by_field_name(n, "name", 4);
             TSNode expr = valueExprNode(doc_, n, "value");
             if (!ts_node_is_null(name) && !ts_node_is_null(expr))
-                constExpr_.emplace(stripQuotes(doc_.text(name)), expr);
+                constExpr_.emplace(std::string(doc_.text(name, true)), expr);
         }
         uint32_t c = ts_node_named_child_count(n);
         for (uint32_t i = 0; i < c; ++i) collectConstants(ts_node_named_child(n, i));
@@ -98,8 +93,8 @@ private:
     std::optional<double> evalNode(TSNode n) {
         if (ts_node_is_null(n)) return std::nullopt;
         TSSymbol s = ts_node_symbol(n);
-        if (s == number_) return std::strtod(text(n).c_str(), nullptr);
-        if (s == identifier_) return resolveIdent(text(n));
+        if (s == number_) return std::strtod(std::string(doc_.text(n)).c_str(), nullptr);
+        if (s == identifier_) return resolveIdent(std::string(doc_.text(n)));
         if (s == paren_)
             return ts_node_named_child_count(n) > 0 ? evalNode(ts_node_named_child(n, 0)) : std::nullopt;
         if (s == unary_) {
@@ -142,7 +137,7 @@ private:
     std::optional<double> evalCall(TSNode n) {
         uint32_t c = ts_node_named_child_count(n);
         if (c == 0) return std::nullopt;
-        std::string fn = text(ts_node_named_child(n, 0));
+        std::string fn = std::string(doc_.text(ts_node_named_child(n, 0)));
         std::vector<double> a;
         for (uint32_t i = 1; i < c; ++i) {
             auto v = evalNode(ts_node_named_child(n, i));

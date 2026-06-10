@@ -220,7 +220,7 @@ private:
     // value_attribute / string_attribute child whose Name matches (C2).
     std::optional<std::string> attrText(TSNode n, const std::string &field) const {
         TSNode f = ts_node_child_by_field_name(n, field.c_str(), static_cast<uint32_t>(field.size()));
-        if (!ts_node_is_null(f)) return unquote(doc_.text(f));
+        if (!ts_node_is_null(f)) return std::string(doc_.text(f, true));
         uint32_t c = ts_node_named_child_count(n);
         for (uint32_t i = 0; i < c; ++i) {
             TSNode child = ts_node_named_child(n, i);
@@ -229,7 +229,7 @@ private:
             TSNode nameN = ts_node_named_child(child, 0);
             if (ts_node_is_null(nameN) || doc_.text(nameN) != field) continue;
             TSNode val = ts_node_child_by_field_name(child, "value", 5);
-            if (!ts_node_is_null(val)) return unquote(doc_.text(val));
+            if (!ts_node_is_null(val)) return std::string(doc_.text(val, true));
         }
         return std::nullopt;
     }
@@ -283,19 +283,13 @@ private:
     void addRefTargets(TSNode n, std::vector<TSNode> &out) const {
         TSNode f = ts_node_child_by_field_name(n, "ref", 3);
         if (ts_node_is_null(f)) return;
-        std::string_view t = doc_.text(f);
-        if (t.size() >= 2 && (t.front() == '"' || t.front() == '\'')) t = t.substr(1, t.size() - 2);
+        std::string_view t = doc_.text(f, true);
         for (TSNode d : index_->definitions(t)) out.push_back(d);
     }
 
     // ---- setup / helpers ----
 
     static Tri tri(bool b) { return b ? Tri::True : Tri::False; }
-
-    static std::string unquote(std::string_view t) {
-        if (t.size() >= 2 && (t.front() == '"' || t.front() == '\'')) t = t.substr(1, t.size() - 2);
-        return std::string(t);
-    }
 
     static bool parseNum(const std::string &s, double &out) {
         if (s.empty()) return false;

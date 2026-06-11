@@ -28,26 +28,26 @@
 
 namespace {
 
-int runVerb(const std::vector<const char *> &pos, bool pretty) {
+int run_verb(const std::vector<const char *> &pos, bool pretty) {
     const char *verb = pos[0];
-    bool findUsages = std::strcmp(verb, "find-usages") == 0;
-    bool placementTree = std::strcmp(verb, "placement-tree") == 0;
+    bool find_usages = std::strcmp(verb, "find-usages") == 0;
+    bool placement_tree = std::strcmp(verb, "placement-tree") == 0;
     // find-usages needs <name> <file>; placement-tree takes an optional <volume>
     // before <file>; the rest take just <file>.
-    bool ok = findUsages ? pos.size() == 3
-            : placementTree ? pos.size() == 2 || pos.size() == 3
+    bool ok = find_usages ? pos.size() == 3
+            : placement_tree ? pos.size() == 2 || pos.size() == 3
             : pos.size() == 2;
     if (!ok) {
         std::fprintf(stderr, "usage: gg %s %s<file.gdml|->\n", verb,
-                     findUsages ? "<name> " : placementTree ? "[volume] " : "");
+                     find_usages ? "<name> " : placement_tree ? "[volume] " : "");
         return 2;
     }
     gg::Document doc(pos.back());
     gg::PreWalk index(doc);
     gg::Verbs verbs(doc, index, pretty);
-    if (findUsages) verbs.findUsages(pos[1]);
-    else if (placementTree) verbs.placementTree(pos.size() == 3 ? pos[1] : "");
-    else if (std::strcmp(verb, "dead-defs") == 0) verbs.deadDefs();
+    if (find_usages) verbs.find_usages(pos[1]);
+    else if (placement_tree) verbs.placement_tree(pos.size() == 3 ? pos[1] : "");
+    else if (std::strcmp(verb, "dead-defs") == 0) verbs.dead_defs();
     else verbs.dangling();
     return 0;
 }
@@ -61,11 +61,11 @@ struct Options {
 
 // Parse `file` once, then run each query against the shared tree. A PreWalk
 // index is built at most once, lazily, and shared across deref queries.
-int runQueries(const std::vector<std::string> &queries, const char *file, const Options &opt) {
+int run_queries(const std::vector<std::string> &queries, const char *file, const Options &opt) {
     gg::Document doc(file);
     std::unique_ptr<gg::PreWalk> shared;
     bool multi = queries.size() > 1;
-    bool anyMatch = false;
+    bool any_match = false;
     for (const std::string &query : queries) {
         gg::Query q = gg::QueryParser::parseString(query);
         gg::Nfa nfa(q);
@@ -78,7 +78,7 @@ int runQueries(const std::vector<std::string> &queries, const char *file, const 
         for (const auto &u : result.unevaluable)
             std::fprintf(stderr, "gg: warning: could not evaluate %s at %s:%u\n",
                          u.first.c_str(), doc.get_name().c_str(), doc.line(u.second));
-        anyMatch = anyMatch || !hits.empty();
+        any_match = any_match || !hits.empty();
 
         if (opt.quiet) continue;
         if (opt.count) {
@@ -95,10 +95,10 @@ int runQueries(const std::vector<std::string> &queries, const char *file, const 
             if (auto v = gg::fieldOf(doc, n, opt.field)) std::printf("%s\n", v->c_str());
         }
     }
-    return anyMatch ? 0 : 1;
+    return any_match ? 0 : 1;
 }
 
-bool isVerb(const char *s) {
+bool is_verb(const char *s) {
     return !std::strcmp(s, "placement-tree") || !std::strcmp(s, "dead-defs") ||
            !std::strcmp(s, "dangling") || !std::strcmp(s, "find-usages");
 }
@@ -139,13 +139,13 @@ int main(int argc, char **argv) {
     }
     if (positional.empty()) { usage(stderr); return 2; }
     try {
-        if (isVerb(positional[0])) return runVerb(positional, opt.pretty);
+        if (is_verb(positional[0])) return run_verb(positional, opt.pretty);
         if (!queries.empty()) {
             if (positional.size() != 1) { usage(stderr); return 2; }  // exactly the file
-            return runQueries(queries, positional[0], opt);
+            return run_queries(queries, positional[0], opt);
         }
         if (positional.size() != 2) { usage(stderr); return 2; }       // <query> <file>
-        return runQueries({positional[0]}, positional[1], opt);
+        return run_queries({positional[0]}, positional[1], opt);
     } catch (const std::exception &e) {
         std::fprintf(stderr, "gg: %s\n", e.what());
         return 2;

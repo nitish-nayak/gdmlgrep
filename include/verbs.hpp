@@ -27,81 +27,80 @@ namespace gg {
 class Verbs {
 public:
     Verbs(const Document &doc, const PreWalk &index, bool pretty = false)
-        : doc_(doc), index_(index), pretty_(pretty) {
-    }
+        : doc(doc), index(index), pretty(pretty) {}
 
-    void findUsages(const std::string &name) const { emitSorted(index_.uses(name)); }
+    void find_usages(const std::string &name) const { emit_sorted(index.uses(name)); }
 
     void dangling() const {
         std::vector<TSNode> out;
-        for (const auto &[name, nodes] : index_.allUses())
-            if (index_.definitions(name).empty())
+        for (const auto &[name, nodes] : index.allUses())
+            if (index.definitions(name).empty())
                 for (TSNode n : nodes) out.push_back(n);
-        emitSorted(out);
+        emit_sorted(out);
     }
 
-    void deadDefs() const {
+    void dead_defs() const {
         std::set<std::string> used;
-        collectUsed(doc_.root(), used);
+        collect_used(doc.root(), used);
         std::vector<TSNode> out;
-        for (const auto &[name, nodes] : index_.allDefs())
-            if (index_.uses(name).empty() && !used.count(name))
+        for (const auto &[name, nodes] : index.allDefs())
+            if (index.uses(name).empty() && !used.count(name))
                 for (TSNode n : nodes) out.push_back(n);
-        emitSorted(out);
+        emit_sorted(out);
     }
 
     // Root at <world> by default, or at a named volume when one is given.
-    void placementTree(const std::string &root = "") {
+    void placement_tree(const std::string &root = "") {
         if (!root.empty()) {
-            const std::vector<TSNode> &defs = index_.definitions(root);
+            const std::vector<TSNode> &defs = index.definitions(root);
             if (defs.empty()) {
                 std::fprintf(stderr, "gg: no volume named '%s'\n", root.c_str());
                 return;
             }
-            for (TSNode v : defs) emitNode(v, "", 0, 0);
+            for (TSNode v : defs) emit_node(v, "", 0, 0);
             return;
         }
-        TSNode world = findFirst(doc_.root(), kWORLD.id());
+        TSNode world = find_first(doc.root(), kWORLD.id());
         if (ts_node_is_null(world)) return;
-        auto refField = std::string(index_.fieldText(world, "ref"));
-        for (TSNode v : index_.definitions(refField)) emitNode(v, "", 0, 0);
+        auto ref_field = std::string(index.fieldText(world, "ref"));
+        for (TSNode v : index.definitions(ref_field)) emit_node(v, "", 0, 0);
     }
 
 private:
-    const Document &doc_;
-    const PreWalk &index_;
-    bool pretty_;
-    std::set<std::string> visited_;  // placement-tree: volumes already expanded
+    const Document &doc;
+    const PreWalk &index;
+    bool pretty;
+    std::set<std::string> visited;  // placement-tree: volumes already expanded
 
-    void emitSorted(const std::vector<TSNode> &nodes) const {
+    // Dedup by source range (document order), then emit each.
+    void emit_sorted(const std::vector<TSNode> &nodes) const {
         std::map<std::pair<uint32_t, uint32_t>, TSNode> out;
         for (TSNode n : nodes) out.emplace(std::make_pair(ts_node_start_byte(n), ts_node_end_byte(n)), n);
-        for (auto &kv : out) emitLine(doc_, kv.second, pretty_);
+        for (auto &kv : out) emitLine(doc, kv.second, pretty);
     }
 
     // The volume/assembly a placement node refers to, via its volumeref child.
-    std::string placedName(TSNode placement) const {
+    std::string placed_name(TSNode placement) const {
         uint32_t c = ts_node_named_child_count(placement);
         for (uint32_t i = 0; i < c; ++i) {
             TSNode ch = ts_node_named_child(placement, i);
-            if (ts_node_symbol(ch) == kVOLUMEREF) return std::string(index_.fieldText(ch, "ref"));
+            if (ts_node_symbol(ch) == kVOLUMEREF) return std::string(index.fieldText(ch, "ref"));
         }
         return {};
     }
 
-    // Placement hierarchy. With --pretty: tree(1)-style connectors (kind: 0 =
-    // root, 1 = mid sibling |--, 2 = last `--). Plain: depth-indented names,
-    // no Unicode, so it pipes cleanly. Shared subtrees collapse with "(see above)".
-    void emitNode(TSNode logical, const std::string &prefix, int kind, int depth) {
-        std::string name = std::string(index_.fieldText(logical, "name"));
-        if (pretty_) {
+    // Placement hierarchy. kind: 0 root, 1 mid-sibling ├──, 2 last └── (for
+    // --pretty; plain mode indents by depth). Shared subtrees collapse "(see above)".
+    void emit_node(TSNode logical, const std::string &prefix, int kind, int depth) {
+        std::string name = std::string(index.fieldText(logical, "name"));
+        if (pretty) {
             const char *conn = kind == 0 ? "" : kind == 2 ? "└── " : "├── ";
             std::printf("%s%s%s%s%s", prefix.c_str(), conn, ansi::tag, name.c_str(), ansi::reset);
         } else {
             std::printf("%*s%s", depth * 2, "", name.c_str());
         }
-        if (!visited_.insert(name).second) {
-            std::printf("%s (see above)%s\n", pretty_ ? ansi::dim : "", pretty_ ? ansi::reset : "");
+        if (!visited.insert(name).second) {
+            std::printf("%s (see above)%s\n", pretty ? ansi::dim : "", pretty ? ansi::reset : "");
             return;
         }
         std::printf("\n");
@@ -112,34 +111,34 @@ private:
             TSSymbol s = ts_node_symbol(ch);
             if((s != kPHYSVOL) && (s != kDIVISIONVOL) && (s != kREPLICAVOL) && (s != kPARAMVOL))
                 continue;
-            for (TSNode v : index_.definitions(placedName(ch))) placed.push_back(v);
+            for (TSNode v : index.definitions(placed_name(ch))) placed.push_back(v);
         }
-        std::string childPrefix = prefix + (kind == 0 ? "" : kind == 2 ? "    " : "│   ");
+        std::string child_prefix = prefix + (kind == 0 ? "" : kind == 2 ? "    " : "│   ");
         for (size_t i = 0; i < placed.size(); ++i)
-            emitNode(placed[i], childPrefix, i + 1 == placed.size() ? 2 : 1, depth + 1);
+            emit_node(placed[i], child_prefix, i + 1 == placed.size() ? 2 : 1, depth + 1);
     }
 
-    // Names referenced by something other than a captured `ref` field:
-    // expression identifiers (value="pi/2.") and generic `ref` attributes on
-    // non-ref-element tags (<fraction ref="U235">, <composite ref=...>).
-    void collectUsed(TSNode n, std::set<std::string> &out) const {
+    // Names referenced outside captured `ref` fields: expression identifiers
+    // (value="pi/2.") and generic ref= attributes (<fraction ref="U235">).
+    void collect_used(TSNode n, std::set<std::string> &out) const {
         TSSymbol s = ts_node_symbol(n);
         if (s == kIDENTIFIER) {
-            out.insert(std::string(doc_.text(n)));
+            out.insert(std::string(doc.text(n)));
         } else if (s == kATTRIBUTE && ts_node_named_child_count(n) >= 2) {
             TSNode name = ts_node_named_child(n, 0);
-            if (doc_.text(name) == "ref")
-                out.insert(std::string(doc_.text(ts_node_named_child(n, 1), true)));
+            if (doc.text(name) == "ref")
+                out.insert(std::string(doc.text(ts_node_named_child(n, 1), true)));
         }
         uint32_t c = ts_node_named_child_count(n);
-        for (uint32_t i = 0; i < c; ++i) collectUsed(ts_node_named_child(n, i), out);
+        for (uint32_t i = 0; i < c; ++i) collect_used(ts_node_named_child(n, i), out);
     }
 
-    TSNode findFirst(TSNode n, TSSymbol s) const {
+    // First node of type s in n's subtree (preorder), or a null node.
+    TSNode find_first(TSNode n, TSSymbol s) const {
         if (ts_node_symbol(n) == s) return n;
         uint32_t c = ts_node_named_child_count(n);
         for (uint32_t i = 0; i < c; ++i) {
-            TSNode r = findFirst(ts_node_named_child(n, i), s);
+            TSNode r = find_first(ts_node_named_child(n, i), s);
             if (!ts_node_is_null(r)) return r;
         }
         return TSNode{};

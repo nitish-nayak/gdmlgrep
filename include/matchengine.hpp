@@ -23,7 +23,7 @@
 #include "document.hpp"
 #include "expreval.hpp"
 #include "prewalk.hpp"
-#include "utils.hpp"
+#include "utils/nodeattr.hpp"
 
 #include <cstdint>
 #include <cstdlib>

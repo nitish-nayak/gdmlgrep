@@ -10,7 +10,8 @@
 // and each query runs against the shared tree, each block headed "==> q <==".
 // Query mode follows grep exit codes (0 = matches, 1 = none, 2 = error); verbs
 // return 0 on success, 2 on error.
-#include "utils.hpp"
+#include "utils/output.hpp"
+#include "utils/nodeattr.hpp"
 #include "document.hpp"
 #include "prewalk.hpp"
 #include "query/nfa.hpp"

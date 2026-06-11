@@ -15,7 +15,7 @@
 #include "query/grammar.hpp"
 #include "document.hpp"
 #include "prewalk.hpp"
-#include "utils.hpp"
+#include "utils/output.hpp"
 
 #include <cstdio>
 #include <map>

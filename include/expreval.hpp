@@ -12,7 +12,7 @@
 // are intentionally not done here.
 #include "query/grammar.hpp"
 #include "document.hpp"
-#include "utils.hpp"
+#include "utils/nodeattr.hpp"
 
 #include <cmath>
 #include <cstdlib>

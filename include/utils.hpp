@@ -59,11 +59,11 @@ inline void emitLine(const Document &doc, TSNode n, bool pretty = false) {
     std::string_view t = doc.text(n);
     t = t.substr(0, t.find('\n'));
     if (!pretty) {
-        std::printf("%s:%u: %.*s\n", doc.name().c_str(), doc.line(n),
+        std::printf("%s:%u: %.*s\n", doc.get_name().c_str(), doc.line(n),
                     static_cast<int>(t.size()), t.data());
         return;
     }
-    std::printf("%s%s%s:%s%u%s: %s\n", ansi::path, doc.name().c_str(), ansi::reset,
+    std::printf("%s%s%s:%s%u%s: %s\n", ansi::path, doc.get_name().c_str(), ansi::reset,
                 ansi::lineno, doc.line(n), ansi::reset, highlightGdml(t).c_str());
 }
 

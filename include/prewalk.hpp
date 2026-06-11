@@ -28,41 +28,48 @@
 
 namespace gg {
 
+// A bare GDML name -> the nodes carrying it (a category may hold several).
+using TSNodeIndex = std::unordered_map<std::string, std::vector<TSNode>>;
+
 class PreWalk {
 public:
-    explicit PreWalk(const Document &doc) : doc_(doc) { build(doc.root()); }
+    explicit PreWalk(const Document &doc) : doc(doc) { build(doc.root()); }
 
-    const std::vector<TSNode> &definitions(std::string_view name) const { return lookup(defs_, name); }
-    const std::vector<TSNode> &uses(std::string_view name)        const { return lookup(uses_, name); }
+    // The defining / referencing nodes for a bare name (the shared empty vector if
+    // none). Caller disambiguates by node type when a name spans categories.
+    const std::vector<TSNode> &definitions(std::string_view name) const {
+        auto it = defs_by_name.find(std::string(name));
+        return it == defs_by_name.end() ? empty : it->second;
+    }
+    const std::vector<TSNode> &uses(std::string_view name) const {
+        auto it = uses_by_name.find(std::string(name));
+        return it == uses_by_name.end() ? empty : it->second;
+    }
 
-    const std::unordered_map<std::string, std::vector<TSNode>> &allDefs() const { return defs_; }
-    const std::unordered_map<std::string, std::vector<TSNode>> &allUses() const { return uses_; }
+    // The whole index, for verbs that sweep every name (unused defs, all usages).
+    const TSNodeIndex &allDefs() const { return defs_by_name; }
+    const TSNodeIndex &allUses() const { return uses_by_name; }
 
     // Text of a node's named field (e.g. name="World" -> World), quote-stripped.
     std::string_view fieldText(TSNode n, const char *field) const {
-        TSNode f = ts_node_child_by_field_name(n, field, (uint32_t)std::strlen(field));
+        TSNode f = ts_node_child_by_field_name(n, field, static_cast<uint32_t>(std::strlen(field)));
         if (ts_node_is_null(f)) return {};
-        return doc_.text(f, true);
+        return doc.text(f, true);
     }
-
 
 private:
-    const Document &doc_;
-    std::unordered_map<std::string, std::vector<TSNode>> defs_;
-    std::unordered_map<std::string, std::vector<TSNode>> uses_;
-    static inline const std::vector<TSNode> empty_{};
+    const Document &doc;
+    TSNodeIndex defs_by_name;
+    TSNodeIndex uses_by_name;
+    static inline const std::vector<TSNode> empty{};  // returned by reference on a miss
 
+    // Index every node that carries a name and/or ref field, then recurse. A single
+    // node can do both (e.g. a defining element that also references another).
     void build(TSNode n) {
-        if (auto name = fieldText(n, "name"); !name.empty()) defs_[std::string(name)].push_back(n);
-        if (auto ref  = fieldText(n, "ref");  !ref.empty())  uses_[std::string(ref)].push_back(n);
+        if (auto name = fieldText(n, "name"); !name.empty()) defs_by_name[std::string(name)].push_back(n);
+        if (auto ref  = fieldText(n, "ref");  !ref.empty())  uses_by_name[std::string(ref)].push_back(n);
         uint32_t c = ts_node_named_child_count(n);
         for (uint32_t i = 0; i < c; ++i) build(ts_node_named_child(n, i));
-    }
-
-    static const std::vector<TSNode> &lookup(
-        const std::unordered_map<std::string, std::vector<TSNode>> &m, std::string_view k) {
-        auto it = m.find(std::string(k));
-        return it == m.end() ? empty_ : it->second;
     }
 };
 

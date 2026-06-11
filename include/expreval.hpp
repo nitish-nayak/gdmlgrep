@@ -28,87 +28,113 @@ constexpr double kPi = 3.14159265358979323846;  // CLHEP pi
 
 class Evaluator {
 public:
-    explicit Evaluator(const Document &doc) : doc_(doc) {}
+    explicit Evaluator(const Document &doc) : doc(doc) {}
 
+    // Reduce expression node n to a number, or nullopt if it can't be (see header).
     std::optional<double> eval(TSNode n) {
-        if (!built_) { built_ = true; collectConstants(doc_.root()); }
-        return evalNode(n);
+        // Index the document's constants on first use — most queries never get here.
+        if (!built) { built = true; eval_constants(doc.root()); }
+        return eval_node(n);
     }
 
 private:
-    const Document &doc_;
-    std::map<std::string, TSNode> constExpr_;                   // <constant>/<quantity> name -> value expr
-    std::map<std::string, std::optional<double>> cache_;
-    std::set<std::string> inProgress_;                          // cycle guard
-    bool built_ = false;
+    const Document &doc;
+    std::map<std::string, TSNode> const_expr;                   // <constant>/<quantity> name -> value expr
+    std::map<std::string, std::optional<double>> cache;
+    std::set<std::string> in_progress;                          // cycle guard
+    bool built = false;
 
-    // <variable> is deliberately not collected -> references to it are unevaluable.
-    void collectConstants(TSNode n) {
+    // Record every <constant>/<quantity> as name -> its value expression, so
+    // eval_ident can resolve references. <variable> is deliberately skipped: it is
+    // loop-mutable, so references to it must stay unevaluable.
+    void eval_constants(TSNode n) {
         TSSymbol s = ts_node_symbol(n);
+
         if (s == kCONSTANT || s == kQUANTITY) {
             TSNode name = ts_node_child_by_field_name(n, "name", 4);
-            TSNode expr = valueExprNode(doc_, n, "value");
+            TSNode expr = valueExprNode(doc, n, "value");
             if (!ts_node_is_null(name) && !ts_node_is_null(expr))
-                constExpr_.emplace(std::string(doc_.text(name, true)), expr);
+                const_expr.emplace(std::string(doc.text(name, true)), expr);
         }
+
         uint32_t c = ts_node_named_child_count(n);
-        for (uint32_t i = 0; i < c; ++i) collectConstants(ts_node_named_child(n, i));
+        for (uint32_t i = 0; i < c; ++i)
+            eval_constants(ts_node_named_child(n, i));
     }
 
-    std::optional<double> evalNode(TSNode n) {
+    // Evaluate one expression node by kind, recursing into operands; nullopt
+    // propagates up the moment any sub-expression is unevaluable.
+    std::optional<double> eval_node(TSNode n) {
         if (ts_node_is_null(n)) return std::nullopt;
         TSSymbol s = ts_node_symbol(n);
-        if (s == kNUMBER) return std::strtod(std::string(doc_.text(n)).c_str(), nullptr);
-        if (s == kIDENTIFIER) return resolveIdent(std::string(doc_.text(n)));
+
+        if (s == kNUMBER)
+            return std::strtod(std::string(doc.text(n)).c_str(), nullptr);
+        if (s == kIDENTIFIER)
+            return eval_ident(std::string(doc.text(n)));
         if (s == kPAREN)
-            return ts_node_named_child_count(n) > 0 ? evalNode(ts_node_named_child(n, 0)) : std::nullopt;
+            return ts_node_named_child_count(n) > 0 ? eval_node(ts_node_named_child(n, 0)) : std::nullopt;
         if (s == kUNARY) {
-            auto v = evalNode(ts_node_named_child(n, 0));
+            auto v = eval_node(ts_node_named_child(n, 0));
             if (!v) return std::nullopt;
+
             TSNode op = ts_node_child_by_field_name(n, "op", 2);
-            return (!ts_node_is_null(op) && doc_.text(op) == "-") ? -*v : *v;
+            return (!ts_node_is_null(op) && doc.text(op) == "-") ? -*v : *v;
         }
         if (s == kBINARY) {
             if (ts_node_named_child_count(n) < 2) return std::nullopt;
-            auto a = evalNode(ts_node_named_child(n, 0));
-            auto b = evalNode(ts_node_named_child(n, 1));
+
+            auto a = eval_node(ts_node_named_child(n, 0));
+            auto b = eval_node(ts_node_named_child(n, 1));
             if (!a || !b) return std::nullopt;
+
             TSNode op = ts_node_child_by_field_name(n, "op", 2);
-            std::string o = ts_node_is_null(op) ? "" : std::string(doc_.text(op));
+            std::string o = ts_node_is_null(op) ? "" : std::string(doc.text(op));
             if (o == "+") return *a + *b;
             if (o == "-") return *a - *b;
             if (o == "*") return *a * *b;
-            if (o == "/") return *b != 0 ? std::optional<double>(*a / *b) : std::nullopt;
+            if (o == "/") return *b != 0 ? std::optional<double>(*a / *b) : std::nullopt;  // 0 divisor -> unevaluable
             if (o == "^") return std::pow(*a, *b);
             return std::nullopt;
         }
-        if (s == kCALL) return evalCall(n);
+        if (s == kCALL) return eval_call(n);
         return std::nullopt;
     }
 
-    std::optional<double> resolveIdent(const std::string &name) {
+    // Resolve an identifier to a number: the builtin `pi`, or a <constant>/<quantity>
+    // value (memoized, failures included). in_progress breaks reference cycles — a
+    // constant that refers, directly or transitively, back to itself.
+    std::optional<double> eval_ident(const std::string &name) {
         if (name == "pi") return kPi;
-        auto ci = cache_.find(name);
-        if (ci != cache_.end()) return ci->second;
-        if (inProgress_.count(name)) return std::nullopt;  // reference cycle
-        auto ei = constExpr_.find(name);
-        if (ei == constExpr_.end()) return cache_[name] = std::nullopt;  // unknown / unit / variable
-        inProgress_.insert(name);
-        std::optional<double> v = evalNode(ei->second);
-        inProgress_.erase(name);
-        return cache_[name] = v;
+
+        auto ci = cache.find(name);
+        if (ci != cache.end()) return ci->second;
+
+        if (in_progress.count(name)) return std::nullopt;
+
+        auto ei = const_expr.find(name);
+        if (ei == const_expr.end()) return cache[name] = std::nullopt;  // unknown / unit / variable
+
+        in_progress.insert(name);
+        std::optional<double> v = eval_node(ei->second);
+        in_progress.erase(name);
+        return cache[name] = v;
     }
 
-    std::optional<double> evalCall(TSNode n) {
+    // Evaluate a function call: child 0 is the function name, the rest its
+    // already-reduced arguments. Only the <cmath> builtins below are supported.
+    std::optional<double> eval_call(TSNode n) {
         uint32_t c = ts_node_named_child_count(n);
         if (c == 0) return std::nullopt;
-        std::string fn = std::string(doc_.text(ts_node_named_child(n, 0)));
+
+        std::string fn = std::string(doc.text(ts_node_named_child(n, 0)));
         std::vector<double> a;
         for (uint32_t i = 1; i < c; ++i) {
-            auto v = evalNode(ts_node_named_child(n, i));
+            auto v = eval_node(ts_node_named_child(n, i));
             if (!v) return std::nullopt;
             a.push_back(*v);
         }
+
         if (a.size() == 1) {
             double x = a[0];
             if (fn == "sin") return std::sin(x);

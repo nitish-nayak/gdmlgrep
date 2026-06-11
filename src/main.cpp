@@ -76,7 +76,7 @@ int runQueries(const std::vector<std::string> &queries, const char *file, const 
         std::vector<TSNode> hits = engine.run();
         for (const auto &u : engine.unevaluable())
             std::fprintf(stderr, "gg: warning: could not evaluate %s at %s:%u\n",
-                         u.first.c_str(), doc.name().c_str(), doc.line(u.second));
+                         u.first.c_str(), doc.get_name().c_str(), doc.line(u.second));
         anyMatch = anyMatch || !hits.empty();
 
         if (opt.quiet) continue;

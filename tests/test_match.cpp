@@ -45,8 +45,7 @@ int main(int argc, char **argv) {
         for (const auto &[query, expected] : cases) {
             gg::Query q = gg::QueryParser::parseString(query);
             gg::Nfa nfa(q);
-            gg::MatchEngine engine(doc, nfa);
-            std::size_t got = engine.run().size();
+            std::size_t got = gg::run_query(doc, nfa).matches.size();
             bool ok = got == expected;
             std::printf("%-32s expected=%zu got=%zu  %s\n", query.c_str(), expected, got,
                         ok ? "ok" : "FAIL");

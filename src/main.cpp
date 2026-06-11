@@ -73,9 +73,9 @@ int runQueries(const std::vector<std::string> &queries, const char *file, const 
             std::fprintf(stderr, "gg: warning: unknown node type '%s' in '%s'\n", t.c_str(), query.c_str());
         if (nfa.needsDeref() && !shared) shared = std::make_unique<gg::PreWalk>(doc);
 
-        gg::MatchEngine engine(doc, nfa, shared.get());
-        std::vector<TSNode> hits = engine.run();
-        for (const auto &u : engine.unevaluable())
+        gg::MatchResult result = gg::run_query(doc, nfa, shared.get());
+        const std::vector<TSNode> &hits = result.matches;
+        for (const auto &u : result.unevaluable)
             std::fprintf(stderr, "gg: warning: could not evaluate %s at %s:%u\n",
                          u.first.c_str(), doc.get_name().c_str(), doc.line(u.second));
         anyMatch = anyMatch || !hits.empty();

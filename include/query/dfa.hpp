@@ -44,6 +44,7 @@ public:
 
     int empty() const { return 0; }  // the empty state (no positions) — id 0, where a walk starts
     const DfaState &state(int id) const { return state_list[id]; }
+    const Nfa &nfa() const { return source_nfa; }  // the walk reaches the Nfa through the Dfa
     std::size_t numStates() const { return state_list.size(); }
 
     // The transition function: the state reached from `s` on input (sym, hop),

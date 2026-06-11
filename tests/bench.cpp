@@ -39,11 +39,9 @@ int main(int argc, char **argv) {
         gg::Query q = gg::QueryParser::parseString(argv[1]);
         gg::Document doc(argv[2]);
         gg::Nfa nfa(q);
-        gg::MatchEngine engine(doc, nfa);
-
-        std::size_t n = engine.run().size();  // warm (builds the DFA)
+        std::size_t n = gg::run_query(doc, nfa).matches.size();  // warm-up
         auto a = clk::now();
-        for (int i = 0; i < iters; ++i) engine.run();
+        for (int i = 0; i < iters; ++i) gg::run_query(doc, nfa);
         auto b = clk::now();
 
         std::printf("file    : %s (%zu bytes)\n", argv[2], src.size());

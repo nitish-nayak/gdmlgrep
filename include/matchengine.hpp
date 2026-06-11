@@ -59,7 +59,7 @@ public:
         uneval_.clear();
         found_ = false;
         TSNode root = doc_.root();
-        int s = dfa_->step(dfa_->empty(), ts_node_symbol(root), Hop::Child, true);
+        int s = dfa_->transition(dfa_->empty(), ts_node_symbol(root), Hop::Child, true);
         walkDfa(root, guardFilterDfa(s, root));
         return collect();
     }
@@ -100,11 +100,11 @@ private:
 
     void walkDfa(TSNode n, int active) {
         if (stopAtFirst_ && found_) return;
-        const Dfa::State &st = dfa_->state(active);
+        const DfaState &st = dfa_->state(active);
         if (st.accept) record(n);
         if (st.hasDeref && index_) {
             for (TSNode d : gatherDeref(n)) {
-                int da = guardFilterDfa(dfa_->step(active, ts_node_symbol(d), Hop::Deref, false), d);
+                int da = guardFilterDfa(dfa_->transition(active, ts_node_symbol(d), Hop::Deref, false), d);
                 if (!dfa_->state(da).pos.empty()) continueDfaWalk(d, da);
                 if (stopAtFirst_ && found_) return;
             }
@@ -112,7 +112,7 @@ private:
         uint32_t c = ts_node_named_child_count(n);
         for (uint32_t i = 0; i < c; ++i) {
             TSNode ch = ts_node_named_child(n, i);
-            int s = dfa_->step(active, ts_node_symbol(ch), Hop::Child, nfa_.floating());
+            int s = dfa_->transition(active, ts_node_symbol(ch), Hop::Child, nfa_.floating());
             walkDfa(ch, guardFilterDfa(s, ch));
             if (stopAtFirst_ && found_) return;
         }
@@ -120,11 +120,11 @@ private:
 
     void continueDfaWalk(TSNode n, int active) {
         if (!visitedDfa_.emplace(active, ts_node_start_byte(n)).second) return;
-        const Dfa::State &st = dfa_->state(active);
+        const DfaState &st = dfa_->state(active);
         if (st.accept) record(n);
         if (st.hasDeref && index_) {
             for (TSNode d : gatherDeref(n)) {
-                int da = guardFilterDfa(dfa_->step(active, ts_node_symbol(d), Hop::Deref, false), d);
+                int da = guardFilterDfa(dfa_->transition(active, ts_node_symbol(d), Hop::Deref, false), d);
                 if (!dfa_->state(da).pos.empty()) continueDfaWalk(d, da);
                 if (stopAtFirst_ && found_) return;
             }
@@ -132,7 +132,7 @@ private:
         uint32_t c = ts_node_named_child_count(n);
         for (uint32_t i = 0; i < c; ++i) {
             TSNode ch = ts_node_named_child(n, i);
-            int a = guardFilterDfa(dfa_->step(active, ts_node_symbol(ch), Hop::Child, false), ch);
+            int a = guardFilterDfa(dfa_->transition(active, ts_node_symbol(ch), Hop::Child, false), ch);
             if (!dfa_->state(a).pos.empty()) continueDfaWalk(ch, a);
             if (stopAtFirst_ && found_) return;
         }
@@ -141,7 +141,7 @@ private:
     // Refine a structural state by dropping guard-failing positions at n. A
     // state with no guarded positions returns unchanged (the table-driven path).
     int guardFilterDfa(int structId, TSNode n) {
-        const Dfa::State &st = dfa_->state(structId);
+        const DfaState &st = dfa_->state(structId);
         if (st.guarded.empty()) return structId;
         std::vector<int> keep;
         keep.reserve(st.pos.size());
@@ -150,7 +150,7 @@ private:
             if (P.guards.empty() || guardsPass(P, n) == Tri::True) keep.push_back(q);
         }
         if (keep.size() == st.pos.size()) return structId;
-        return dfa_->intern(std::move(keep));
+        return dfa_->state_from_positions(std::move(keep));
     }
 
     // ---- guard evaluation ----
@@ -251,7 +251,7 @@ private:
         uint32_t c = ts_node_named_child_count(n);
         for (uint32_t i = 0; i < c && !found_; ++i) {
             TSNode ch = ts_node_named_child(n, i);
-            int s = dfa_->step(dfa_->empty(), ts_node_symbol(ch), Hop::Child, true);
+            int s = dfa_->transition(dfa_->empty(), ts_node_symbol(ch), Hop::Child, true);
             walkDfa(ch, guardFilterDfa(s, ch));
         }
         return found_;

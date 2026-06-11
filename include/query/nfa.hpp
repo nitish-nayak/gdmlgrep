@@ -36,7 +36,7 @@ enum class LinkConnector { Child, Deref };
 class Nfa {
 public:
     struct Position {
-        const Node *step = nullptr;             // source Step (null for synthetic wildcards)
+        const Step *step = nullptr;             // source Step (null for synthetic wildcards)
         TSSymbol    symbol = 0;                 // resolved node type; 0 = wildcard / unknown
         bool        wildcard = false;           // matches any element
         bool        accept = false;             // a final step of the query
@@ -71,7 +71,7 @@ public:
             const Position &p = pos_[i];
             std::fprintf(out, "  %2zu  %-14s%s%s", i, typeName(p).c_str(),
                          p.accept ? " [accept]" : "", p.guards.empty() ? "" : "  guards:");
-            for (const Predicate *g : p.guards) std::fprintf(out, " %s", toString(*g).c_str());
+            for (const Predicate *g : p.guards) std::fprintf(out, " %s", g->toString().c_str());
             std::fprintf(out, "\n");
             for (const Edge &e : follow_[i])
                 std::fprintf(out, "        --%s--> %d\n", e.connector == LinkConnector::Child ? "/" : "=>", e.to);
@@ -100,7 +100,7 @@ private:
         return ts_language_symbol_name(lang_, p.symbol);
     }
 
-    int newPosition(const Node &step) {
+    int newPosition(const Step &step) {
         Position p;
         p.step = &step;
         p.wildcard = step.wildcard;
@@ -126,54 +126,55 @@ private:
     }
 
     Sets build(const Node &n, LinkConnector entry) {
-        Sets s{false, {}, {}};
-        switch (n.kind) {
-            case Node::Kind::Step:
-                s = {false, {newPosition(n)}, {}};
-                s.last = s.first;
-                break;
-
-            case Node::Kind::Alt:
-                for (const auto &child : n.children) {
+        Sets s = std::visit(overloaded{
+            [&](const Step &st) {
+                Sets r{false, {newPosition(st)}, {}};
+                r.last = r.first;
+                return r;
+            },
+            [&](const Alt &a) {
+                Sets r{false, {}, {}};
+                for (const auto &child : a.branches) {
                     Sets k = build(*child, entry);
-                    s.nullable = s.nullable || k.nullable;
-                    concat(s.first, k.first);
-                    concat(s.last, k.last);
+                    r.nullable = r.nullable || k.nullable;
+                    concat(r.first, k.first);
+                    concat(r.last, k.last);
                 }
-                break;
-
-            case Node::Kind::Repeat: {
-                Sets x = build(*n.children[0], entry);
-                if (n.quant != Quantifier::Opt)  // Star/Plus: loop back, re-entering via the entry connector
+                return r;
+            },
+            [&](const Repeat &rep) {
+                Sets x = build(*rep.inner, entry);
+                Sets r{false, {}, {}};
+                if (rep.quant != Quantifier::Opt)  // Star/Plus: loop back, re-entering via the entry connector
                     for (int p : x.last)
                         for (int q : x.first)
                             follow_[p].push_back({q, entry});
-                s.nullable = (n.quant != Quantifier::Plus) || x.nullable;
-                s.first = x.first;
-                s.last = x.last;
-                break;
-            }
-
-            case Node::Kind::Seq:
-                if (n.connector == Connector::Child || n.connector == Connector::Deref) {
-                    LinkConnector connector = toLink(n.connector);
+                r.nullable = (rep.quant != Quantifier::Plus) || x.nullable;
+                r.first = x.first;
+                r.last = x.last;
+                return r;
+            },
+            [&](const Seq &sq) {
+                Sets r{false, {}, {}};
+                if (sq.connector == Connector::Child || sq.connector == Connector::Deref) {
+                    LinkConnector connector = toLink(sq.connector);
                     if (connector == LinkConnector::Deref) needsDeref_ = true;
-                    Sets a = build(*n.children[0], entry);
-                    Sets b = build(*n.children[1], connector);
+                    Sets a = build(*sq.lhs, entry);
+                    Sets b = build(*sq.rhs, connector);
                     for (int p : a.last)
                         for (int q : b.first) follow_[p].push_back({q, connector});
-                    s.nullable = a.nullable && b.nullable;
-                    s.first = a.first;
-                    if (a.nullable) concat(s.first, b.first);
-                    s.last = b.last;
-                    if (b.nullable) concat(s.last, a.last);
+                    r.nullable = a.nullable && b.nullable;
+                    r.first = a.first;
+                    if (a.nullable) concat(r.first, b.first);
+                    r.last = b.last;
+                    if (b.nullable) concat(r.last, a.last);
                 } else {  // Descendant / DerefClosure: A hop (w)% hop B, with (w)% nullable
-                    LinkConnector connector = (n.connector == Connector::Descendant) ? LinkConnector::Child : LinkConnector::Deref;
+                    LinkConnector connector = (sq.connector == Connector::Descendant) ? LinkConnector::Child : LinkConnector::Deref;
                     if (connector == LinkConnector::Deref) needsDeref_ = true;
-                    Sets a = build(*n.children[0], entry);
+                    Sets a = build(*sq.lhs, entry);
                     int w = newWildcard();
                     follow_[w].push_back({w, connector});  // (w)% self-loop
-                    Sets b = build(*n.children[1], connector);
+                    Sets b = build(*sq.rhs, connector);
                     for (int p : a.last) {
                         follow_[p].push_back({w, connector});
                         for (int q : b.first) follow_[p].push_back({q, connector});
@@ -183,14 +184,15 @@ private:
                     concat(innerFirst, b.first);
                     std::vector<int> innerLast = b.last;
                     if (b.nullable) innerLast.push_back(w);
-                    s.nullable = a.nullable && b.nullable;
-                    s.first = a.first;
-                    if (a.nullable) concat(s.first, innerFirst);
-                    s.last = innerLast;
-                    if (b.nullable) concat(s.last, a.last);
+                    r.nullable = a.nullable && b.nullable;
+                    r.first = a.first;
+                    if (a.nullable) concat(r.first, innerFirst);
+                    r.last = innerLast;
+                    if (b.nullable) concat(r.last, a.last);
                 }
-                break;
-        }
+                return r;
+            },
+        }, n.value);
         // A node's predicates constrain the node it resolves to -> its terminal positions.
         for (const Predicate &pr : n.preds)
             for (int p : s.last) pos_[p].guards.push_back(&pr);

@@ -16,6 +16,7 @@
 // unevaluable guard (e.g. a numeric compare against an expression we can't yet
 // evaluate) is never a silent no-match — it is excluded but recorded for a
 // diagnostic. Existence guards `[subpath]` run a sub-engine rooted at the node.
+#include "query/ast.hpp"
 #include "query/dfa.hpp"
 #include "query/nfa.hpp"
 #include "query/grammar.hpp"
@@ -165,29 +166,28 @@ private:
     }
 
     Tri evalPred(const Predicate &p, TSNode n) {
-        switch (p.kind) {
-            case Predicate::Kind::Compare: return evalCompare(p, n);
-            case Predicate::Kind::Exists:  return subEngine(p).existsUnder(n) ? Tri::True : Tri::False;
-            case Predicate::Kind::Not: {
-                Tri r = evalPred(*p.neg, n);
+        return std::visit(overloaded{
+            [&](const Compare &c) { return evalCompare(p, c, n); },
+            [&](const Exists &e)  { return subEngine(p, e).existsUnder(n) ? Tri::True : Tri::False; },
+            [&](const Not &nt) {
+                Tri r = evalPred(*nt.neg, n);
                 return r == Tri::Unknown ? Tri::Unknown : (r == Tri::True ? Tri::False : Tri::True);
-            }
-        }
-        return Tri::False;
+            },
+        }, p.value);
     }
 
-    Tri evalCompare(const Predicate &p, TSNode n) {
-        std::optional<std::string> at = attrText(n, p.field);
+    Tri evalCompare(const Predicate &p, const Compare &c, TSNode n) {
+        std::optional<std::string> at = attrText(n, c.field);
         if (!at) return Tri::False;  // attribute absent -> does not match
         const std::string &av = *at;
-        if (p.op == Comparator::Regex)
-            return std::regex_search(av, regexFor(p)) ? Tri::True : Tri::False;
+        if (c.op == Comparator::Regex)
+            return std::regex_search(av, regexFor(p, c)) ? Tri::True : Tri::False;
 
         double pv;
-        if (parseNum(p.value, pv)) {  // numeric intent: the LHS must reduce to a number
+        if (parseNum(c.value, pv)) {  // numeric intent: the LHS must reduce to a number
             double lv;
-            if (!numericValue(n, p.field, av, lv)) { recordUneval(p, n); return Tri::Unknown; }
-            switch (p.op) {
+            if (!numericValue(n, c.field, av, lv)) { recordUneval(p, n); return Tri::Unknown; }
+            switch (c.op) {
                 case Comparator::Eq: return tri(lv == pv);
                 case Comparator::Ne: return tri(lv != pv);
                 case Comparator::Lt: return tri(lv < pv);
@@ -197,9 +197,9 @@ private:
                 default: return Tri::False;
             }
         }
-        switch (p.op) {  // textual intent (RHS is not a number)
-            case Comparator::Eq: return tri(av == p.value);
-            case Comparator::Ne: return tri(av != p.value);
+        switch (c.op) {  // textual intent (RHS is not a number)
+            case Comparator::Eq: return tri(av == c.value);
+            case Comparator::Ne: return tri(av != c.value);
             default: recordUneval(p, n); return Tri::Unknown;  // ordering on non-numeric
         }
     }
@@ -221,21 +221,21 @@ private:
         return attrValue(doc_, n, field);
     }
 
-    const std::regex &regexFor(const Predicate &p) {
+    const std::regex &regexFor(const Predicate &p, const Compare &c) {
         auto it = reCache_.find(&p);
-        if (it == reCache_.end()) it = reCache_.emplace(&p, std::regex(p.value)).first;
+        if (it == reCache_.end()) it = reCache_.emplace(&p, std::regex(c.value)).first;
         return it->second;
     }
 
-    void recordUneval(const Predicate &p, TSNode n) { uneval_.emplace_back(toString(p), n); }
+    void recordUneval(const Predicate &p, TSNode n) { uneval_.emplace_back(p.toString(), n); }
 
     // ---- existence sub-queries (C3) ----
 
-    MatchEngine &subEngine(const Predicate &p) {
+    MatchEngine &subEngine(const Predicate &p, const Exists &e) {
         auto it = subEngines_.find(&p);
         if (it != subEngines_.end()) return *it->second;
         auto &slot = subNfas_[&p];
-        slot = std::make_unique<Nfa>(*p.sub, /*anchored=*/false, tree_sitter_gdml());
+        slot = std::make_unique<Nfa>(*e.sub, /*anchored=*/false, tree_sitter_gdml());
         auto eng = std::make_unique<MatchEngine>(doc_, *slot, index_);
         MatchEngine &ref = *eng;
         subEngines_.emplace(&p, std::move(eng));

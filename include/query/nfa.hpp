@@ -134,8 +134,8 @@ private:
                 break;
 
             case Node::Kind::Alt:
-                for (const auto &kid : n.kids) {
-                    Sets k = build(*kid, entry);
+                for (const auto &child : n.children) {
+                    Sets k = build(*child, entry);
                     s.nullable = s.nullable || k.nullable;
                     concat(s.first, k.first);
                     concat(s.last, k.last);
@@ -143,7 +143,7 @@ private:
                 break;
 
             case Node::Kind::Repeat: {
-                Sets x = build(*n.kids[0], entry);
+                Sets x = build(*n.children[0], entry);
                 if (n.quant != Quantifier::Opt)  // Star/Plus: loop back, re-entering via the entry connector
                     for (int p : x.last)
                         for (int q : x.first)
@@ -158,8 +158,8 @@ private:
                 if (n.connector == Connector::Child || n.connector == Connector::Deref) {
                     LinkConnector connector = toLink(n.connector);
                     if (connector == LinkConnector::Deref) needsDeref_ = true;
-                    Sets a = build(*n.kids[0], entry);
-                    Sets b = build(*n.kids[1], connector);
+                    Sets a = build(*n.children[0], entry);
+                    Sets b = build(*n.children[1], connector);
                     for (int p : a.last)
                         for (int q : b.first) follow_[p].push_back({q, connector});
                     s.nullable = a.nullable && b.nullable;
@@ -170,10 +170,10 @@ private:
                 } else {  // Descendant / DerefClosure: A hop (w)% hop B, with (w)% nullable
                     LinkConnector connector = (n.connector == Connector::Descendant) ? LinkConnector::Child : LinkConnector::Deref;
                     if (connector == LinkConnector::Deref) needsDeref_ = true;
-                    Sets a = build(*n.kids[0], entry);
+                    Sets a = build(*n.children[0], entry);
                     int w = newWildcard();
                     follow_[w].push_back({w, connector});  // (w)% self-loop
-                    Sets b = build(*n.kids[1], connector);
+                    Sets b = build(*n.children[1], connector);
                     for (int p : a.last) {
                         follow_[p].push_back({w, connector});
                         for (int q : b.first) follow_[p].push_back({q, connector});

@@ -9,7 +9,7 @@
 #include <memory>
 #include <set>
 
-// Defined in the vendored, generated grammar (externals/grammar/parser.c).
+// Defined in the generated GDML grammar (the tree-sitter-gdml submodule, gdml/src/parser.c).
 extern "C" const TSLanguage *tree_sitter_gdml(void);
 
 namespace gg {

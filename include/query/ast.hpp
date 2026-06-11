@@ -1,26 +1,26 @@
 #pragma once
-// ast.hpp — the query language: AST + a recursive-descent parser.
+// ast.hpp — the query language: the parsed query tree (AST) and the
+// recursive-descent parser that produces it.
 //
-// A query is a property-path expression (à la SPARQL property paths): steps are
-// operands, connectors are the edges between them, with grouping/alternation/repeat.
+// A query is a property-path expression :
+// node-type steps joined by connectors, with
+// grouping, alternation, quantifiers, and predicate tests.
+// The grammar:
 //
-//   query   := ['/' | '//'] alt          // optional leading anchor; default floating
+//   query   := ['/' | '//'] alt          // leading '/' anchors at the root; default is floating
 //   alt     := seq ('|' seq)*            // alternation (lowest precedence)
 //   seq     := quant (CONNECTOR quant)*  // CONNECTOR = / // => ==>
 //   quant   := atom ('%' | '?' | '+')*   // quantifiers (Kleene star is '%')
 //   atom    := '(' alt ')' | step
-//   step    := (IDENT | '*') pred*       // '*' = any-node wildcard
+//   step    := (IDENT | '*') pred*       // '*' matches any node type
 //   pred    := '[' ('!' pred | IDENT OP value | subpath) ']'
 //   OP      := '=' | '=~' | '!=' | '<' | '<=' | '>' | '>='
 //
-// Lexing is parser-driven (scannerless) because a few tokens are context
-// sensitive: '/' is the child connector between steps but a regex delimiter inside
-// [...] after '=~', and a predicate value runs arbitrarily up to ']'.
-//
-// The node/predicate kinds are std::variant alternatives — the active alternative
-// IS the kind, so there's no hand-maintained discriminant. Each alternative knows
-// how to render itself (toString); structural consumers (nfa/matchengine) dispatch
-// with std::visit + the `overloaded` helper.
+// Every node and predicate kind is a std::variant alternative, so the tree is a
+// sum type with no separate discriminant. Parsing is scannerless — there is no
+// lexer pass — because a few tokens are context-dependent: '/' is a connector
+// between steps but a regex delimiter inside [...], and a predicate value runs to
+// the closing ']'.
 #include <array>
 #include <cctype>
 #include <memory>
@@ -37,10 +37,9 @@ enum class Connector  { Child, Descendant, Deref, DerefClosure };  //  /   //   
 enum class Quantifier { Star, Plus, Opt };                         //  %   +    ?
 enum class Comparator { Eq, Ne, Lt, Le, Gt, Ge, Regex };           //  =  != < <= > >=  =~
 
-// A scannerless cursor over the query text: the position plus the lexing
-// primitives. The const methods (eof/peek/at) are pure lookahead; the non-const
-// ones (match/skip_whitespace/expect) advance. fail() reports a parse error with
-// the 1-based column.
+// Tracks the parse position over the source and provides the lexing primitives.
+// The const methods (eof/at/peek) only inspect; the others advance the position.
+// fail() raises a parse error carrying the 1-based column and never returns.
 struct Cursor {
     std::string_view src;
     std::size_t pos = 0;
@@ -69,19 +68,20 @@ struct Cursor {
     }
 };
 
-// A token-string -> enum entry. Tables of these drive the operator productions;
-// list longer symbols first so matching is maximal-munch (==> before =>, etc.).
+// One (symbol, enum) entry in an operator table.
 template <class E>
 struct Token { std::string_view symbol; E val; };
 
-// Match the first table entry whose symbol is at the cursor (tried in order,
-// so longer symbols must come first for maximal munch); nullopt if none.
+// Consume the first table symbol present at the cursor and return its enum value.
+// The tables list longer symbols first, so this resolves maximal-munch (==> wins
+// over =>). Returns nullopt when no symbol matches.
 template <class E, std::size_t N>
 std::optional<E> match_token(const std::array<Token<E>, N> &table, Cursor &cursor) {
     for (const auto &t : table) if (cursor.match(t.symbol)) return t.val;
     return std::nullopt;
 }
 
+// The operator tables, longest symbol first (see match_token).
 static constexpr std::array<Token<Comparator>, 7> kComparators = {{
     {"=~", Comparator::Regex}, {"!=", Comparator::Ne}, {">=", Comparator::Ge},
     {"<=", Comparator::Le}, {"=", Comparator::Eq}, {">", Comparator::Gt}, {"<", Comparator::Lt},
@@ -96,8 +96,8 @@ static constexpr std::array<Token<Quantifier>, 3> kQuantifiers = {{
     {"%", Quantifier::Star}, {"+", Quantifier::Plus}, {"?", Quantifier::Opt},
 }};
 
-// Visit helper: lets std::visit take an overload set of lambdas, one per
-// alternative (used by the NFA builder and the match engine).
+// Lets std::visit take a set of per-alternative lambdas (used to dispatch over
+// the AST variants here and in nfa/matchengine).
 template <class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
 template <class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
@@ -106,27 +106,27 @@ struct Predicate;
 using NodePtr = std::unique_ptr<Node>;
 using PredicatePtr = std::unique_ptr<Predicate>;
 
-// ---- predicate alternatives (the active variant member is the kind) ----
+// The three predicate kinds.
 struct Compare { std::string field; Comparator op; std::string value;  std::string toString() const; };  // field OP value
-struct Exists  { NodePtr sub;                                          std::string toString() const; };  // [subpath]
-struct Not     { PredicatePtr neg;                                     std::string toString() const; };  // [!pred]
+struct Exists  { NodePtr sub;                                          std::string toString() const; };  // [ subpath ]
+struct Not     { PredicatePtr neg;                                     std::string toString() const; };  // [ !pred ]
 
-// A predicate is one [...] test on a step. Multiple brackets on a step AND.
+// A test written inside [...] on a node. The active alternative is its kind.
 using PredicateVariant = std::variant<Compare, Exists, Not>;
 struct Predicate {
     PredicateVariant value;
     std::string toString() const;
 };
 
-// ---- node alternatives ----
+// The four node kinds.
 struct Step   { std::string type; bool wildcard = false;  std::string toString() const; };  // a node type, or '*'
 struct Seq    { Connector connector; NodePtr lhs, rhs;    std::string toString() const; };  // lhs CONNECTOR rhs
 struct Alt    { std::vector<NodePtr> branches;            std::string toString() const; };  // a | b | ...
-struct Repeat { Quantifier quant; NodePtr inner;          std::string toString() const; };  // inner% / inner+ / inner?
+struct Repeat { Quantifier quant; NodePtr inner;          std::string toString() const; };  // inner with a quantifier
 
-// A node carries its kind (the active alternative) plus the predicates that
-// decorate it. preds is orthogonal to the kind — a predicate can constrain a
-// step OR the node a group resolves to (e.g. `(a | b)[x>5]`).
+// A node in the query tree: one path operator (the active alternative) plus any
+// predicates attached to it. Predicates are independent of the kind — they may
+// constrain a step or the node a group resolves to, e.g. `(a | b)[x>5]`.
 using NodeVariant = std::variant<Step, Seq, Alt, Repeat>;
 struct Node {
     NodeVariant value;
@@ -134,8 +134,8 @@ struct Node {
     std::string toString() const;
 };
 
-// AST constructors. Each pairs a kind with the payload it carries, so the
-// kind <-> Connector/Quantifier/Comparator relationships are legible at a glance.
+// Constructors for the AST: fetch_node wraps a node value in an owning pointer,
+// and each named factory builds one kind from its payload.
 inline NodePtr fetch_node(NodeVariant value) {
     auto n = std::make_unique<Node>();
     n->value = std::move(value);
@@ -154,11 +154,14 @@ inline Predicate negated(Predicate inner) {
     return Predicate{Not{std::make_unique<Predicate>(std::move(inner))}};
 }
 
+// A parsed query: its root node and whether it is anchored at the document root.
 struct Query {
     NodePtr root;
-    bool anchored = false;              // leading '/' (root anchor); else floating
+    bool anchored = false;
 };
 
+// Recursive-descent parser over the query text: one method per grammar
+// production. Throws std::runtime_error (via Cursor::fail) on a syntax error.
 class QueryParser {
 public:
     explicit QueryParser(std::string_view src) : cursor{src} {}
@@ -167,10 +170,9 @@ public:
         cursor.skip_whitespace();
         Query q;
         if (cursor.match("//")) {
-          // explicit floating (same as default)
+          // leading '//' is allowed but means the floating default
         } else if (cursor.match("/")) {
-          // leading '/' = root anchor
-          q.anchored = true;
+          q.anchored = true;  // leading '/' anchors at the root
         }
         q.root = parse_alternation();
         cursor.skip_whitespace();
@@ -184,6 +186,8 @@ private:
     Cursor cursor;
 
     // --- productions ---
+
+    // alt := seq ('|' seq)*
     NodePtr parse_alternation() {
         NodePtr left = parse_sequence();
         cursor.skip_whitespace();
@@ -194,6 +198,7 @@ private:
         return alt(std::move(branches));
     }
 
+    // seq := quant (CONNECTOR quant)*, left-associative.
     NodePtr parse_sequence() {
         NodePtr left = parse_quantity();
         for (;;) {
@@ -205,6 +210,7 @@ private:
         return left;
     }
 
+    // quant := atom ('%' | '?' | '+')*
     NodePtr parse_quantity() {
         NodePtr a = parse_atom();
         for (;;) {
@@ -216,9 +222,8 @@ private:
         return a;
     }
 
-    // An atom is a parenthesized group or a step (a node type or '*'), optionally
-    // followed by predicates. A predicate on a group constrains the node the group
-    // resolves to (e.g. `(position | positionref => position)[x>500]`).
+    // atom := ('(' alt ')' | step) pred*. Predicates bind to the atom; on a group
+    // they constrain the node it resolves to, e.g. `(positionref => position)[x>500]`.
     NodePtr parse_atom() {
         cursor.skip_whitespace();
         NodePtr a;
@@ -243,11 +248,12 @@ private:
         return a;
     }
 
+    // The body inside [...]: '!' pred | IDENT OP value | subpath. An identifier
+    // with no comparison operator after it is a subpath existence test, so the
+    // cursor rewinds and the identifier is parsed as a step path instead.
     Predicate parse_predicate() {
         cursor.skip_whitespace();
         if (cursor.match("!")) return negated(parse_predicate());
-        // Try "field OP value"; if no operator follows the identifier, rewind
-        // and parse the bracket as a sub-path existence test.
         std::size_t save = cursor.pos;
         if (std::isalpha((unsigned char)cursor.peek()) || cursor.peek() == '_') {
             std::string field = parse_identifier();
@@ -260,28 +266,31 @@ private:
         return exists(parse_alternation());
     }
 
-    // --- token helpers ---
-
-    // Consume an identifier. Precondition: the cursor is at an identifier start
-    // (isalpha or '_'); callers guard before calling, so this never returns empty.
+    // An identifier. Precondition: the cursor is at an identifier start (alpha or
+    // '_'); callers guard, so the result is never empty.
     std::string parse_identifier() {
         std::size_t start = cursor.pos;
         ++cursor.pos;  // first char, guaranteed by the precondition
-        while (std::isalnum((unsigned char)cursor.peek()) || cursor.peek() == '_') ++cursor.pos;
+        while (std::isalnum((unsigned char)cursor.peek()) || cursor.peek() == '_')
+          ++cursor.pos;
         return std::string(cursor.src.substr(start, cursor.pos - start));
     }
 
-    // A comparison value runs up to ']' (so it can hold '*', '/', units, etc.).
+    // A comparison value: everything up to the closing ']' (so it may contain
+    // '*', '/', units, ...), with trailing whitespace trimmed.
     std::string parse_value() {
         cursor.skip_whitespace();
         std::size_t start = cursor.pos;
-        while (!cursor.eof() && cursor.peek() != ']' && cursor.peek() != '[') ++cursor.pos;
+        while (!cursor.eof() && cursor.peek() != ']' && cursor.peek() != '[')
+          ++cursor.pos;
         std::size_t end = cursor.pos;
-        while (end > start && std::isspace((unsigned char)cursor.src[end - 1])) --end;  // rtrim
+        while (end > start && std::isspace((unsigned char)cursor.src[end-1]))
+          --end;  // rtrim
         return std::string(cursor.src.substr(start, end - start));
     }
 
-    // A '/'-delimited regex literal; backslash escapes are preserved verbatim.
+    // A '/'-delimited regex literal; backslash escapes (including \/) are copied
+    // verbatim and handed to std::regex unchanged.
     std::string parse_regex() {
         cursor.skip_whitespace();
         cursor.expect('/');
@@ -296,9 +305,10 @@ private:
     }
 };
 
-// --- toString: each alternative renders itself; Node/Predicate dispatch with a
-// --- generic visitor. Defined out-of-line because Seq/Alt/Repeat/Exists/Not
-// --- recurse through NodePtr/PredicatePtr, which need the wrappers complete.
+// Render a node/predicate back to query syntax (for diagnostics and round-trip
+// tests). Each alternative renders itself; Node and Predicate dispatch over their
+// variant. The definitions are out-of-line because the recursive alternatives
+// reach back through NodePtr/PredicatePtr, which need the wrapper types complete.
 inline std::string Step::toString() const { return wildcard ? "*" : type; }
 
 inline std::string Seq::toString() const {
@@ -345,11 +355,11 @@ inline std::string Compare::toString() const {
 
 inline std::string Exists::toString() const { return "[" + sub->toString() + "]"; }
 
-inline std::string Not::toString() const { return "[!" + neg->toString().substr(1); }  // reuse inner '[...]'
+inline std::string Not::toString() const { return "[!" + neg->toString().substr(1); }  // splice '!' into the inner [...]
 
 inline std::string Node::toString() const {
     std::string s = std::visit([](const auto &a) { return a.toString(); }, value);
-    if (!preds.empty() && std::holds_alternative<Seq>(value)) s = "(" + s + ")";  // bind preds to the seq
+    if (!preds.empty() && std::holds_alternative<Seq>(value)) s = "(" + s + ")";  // parenthesize so preds bind to the whole seq
     for (const auto &p : preds) s += p.toString();
     return s;
 }

@@ -25,116 +25,122 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <map>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace gg {
 
-enum class LinkConnector { Child, Deref };
+enum class Hop { Child, Deref };
+
+// The Hop each Connector's edges traverse. The closure forms (Descendant //,
+// DerefClosure ==>) loop over the same hop as their single-step forms (/, =>).
+static const std::map<Connector, Hop> kHop = {
+    {Connector::Child,        Hop::Child},
+    {Connector::Descendant,   Hop::Child},
+    {Connector::Deref,        Hop::Deref},
+    {Connector::DerefClosure, Hop::Deref},
+};
+
+// One automaton state: the node type it matches (or a wildcard), the value
+// predicates to check there, and whether it is an accepting (final) position.
+struct NfaPosition {
+    const Step *step = nullptr;             // source Step (null for synthetic wildcards)
+    TSSymbol    symbol = 0;                 // resolved node type; 0 = wildcard / unknown
+    bool        wildcard = false;           // matches any element
+    bool        accept = false;             // a final step of the query
+    std::vector<const Predicate *> guards;  // value predicates, ANDed
+
+    NfaPosition() = default;
+    explicit NfaPosition(const Step &s) : step(&s), wildcard(s.wildcard) {
+        if (s.wildcard) return;
+        // `element` is renamed to `gdml_element` in the grammar (node_renames in
+        // rules.mjs) to dodge the inherited XML element rule; accept the bare
+        // GDML spelling at the query surface so callers needn't know it.
+        std::string_view t = s.type == "element" ? std::string_view("gdml_element") : s.type;
+        symbol = sym(t.data());
+    }
+};
+
+// A follow edge: the target position and the hop that reaches it.
+struct NfaEdge { int to; Hop hop; };
 
 class Nfa {
 public:
-    struct Position {
-        const Step *step = nullptr;             // source Step (null for synthetic wildcards)
-        TSSymbol    symbol = 0;                 // resolved node type; 0 = wildcard / unknown
-        bool        wildcard = false;           // matches any element
-        bool        accept = false;             // a final step of the query
-        std::vector<const Predicate *> guards;  // value predicates, ANDed
-    };
-    struct Edge { int to; LinkConnector connector; };
-
     Nfa(const Query &q) : Nfa(*q.root, q.anchored) {}
 
     // Core constructor — also used to compile a predicate's subpath (C3).
     Nfa(const Node &root, bool anchored) {
-        floating_ = !anchored;
-        Sets s = build(root, LinkConnector::Child);  // entry connector only matters for a bare top-level star
-        start_ = std::move(s.first);
-        for (int p : s.last) pos_[p].accept = true;
+        is_start_floating = !anchored;
+        Sets s = build(root, Hop::Child);  // entry hop only matters for a bare top-level star
+        start_position = std::move(s.first);
+        for (int p : s.last) positions_list[p].accept = true;
     }
 
-    const std::vector<Position> &positions() const { return pos_; }
-    const std::vector<Edge> &follow(int p) const { return follow_[p]; }
-    const std::vector<int> &start() const { return start_; }
-    bool floating() const { return floating_; }
-    bool needsDeref() const { return needsDeref_; }
-    const std::vector<std::string> &unknownTypes() const { return unknown_; }
+    const std::vector<NfaPosition> &positions() const { return positions_list; }
+    const std::vector<NfaEdge> &follow(int p) const { return follow_position[p]; }
+    const std::vector<int> &start() const { return start_position; }
+    bool floating() const { return is_start_floating; }
+    bool needsDeref() const { return needs_deref; }
+    const std::vector<std::string> &unknownTypes() const { return unknown_types; }
 
     void dump(std::FILE *out = stdout) const {
         std::fprintf(out, "nfa: %zu positions, floating=%d, needsDeref=%d\n",
-                     pos_.size(), floating_, needsDeref_);
+                     positions_list.size(), is_start_floating, needs_deref);
+
         std::fprintf(out, "start:");
-        for (int p : start_) std::fprintf(out, " %d", p);
+        for (int p : start_position) std::fprintf(out, " %d", p);
+
         std::fprintf(out, "\n");
-        for (size_t i = 0; i < pos_.size(); ++i) {
-            const Position &p = pos_[i];
-            std::fprintf(out, "  %2zu  %-14s%s%s", i, typeName(p).c_str(),
+        for (size_t i = 0; i < positions_list.size(); ++i) {
+            const NfaPosition &p = positions_list[i];
+            std::string name;
+            if (p.wildcard) name = "*";
+            else if (p.symbol == 0) name = p.step ? p.step->type + "(?)" : "?";
+            else name = sym_name(p.symbol);
+
+            std::fprintf(out, "  %2zu  %-14s%s%s", i, name.c_str(),
                          p.accept ? " [accept]" : "", p.guards.empty() ? "" : "  guards:");
             for (const Predicate *g : p.guards) std::fprintf(out, " %s", g->toString().c_str());
+
             std::fprintf(out, "\n");
-            for (const Edge &e : follow_[i])
-                std::fprintf(out, "        --%s--> %d\n", e.connector == LinkConnector::Child ? "/" : "=>", e.to);
+            for (const NfaEdge &e : follow_position[i])
+                std::fprintf(out, "        --%s--> %d\n", e.hop == Hop::Child ? "/" : "=>", e.to);
         }
     }
 
 private:
-    std::vector<Position> pos_;
-    std::vector<std::vector<Edge>> follow_;
-    std::vector<int> start_;
-    bool floating_ = true;
-    bool needsDeref_ = false;
-    std::vector<std::string> unknown_;
+    std::vector<NfaPosition> positions_list;
+    std::vector<std::vector<NfaEdge>> follow_position;
+    std::vector<int> start_position;
+    bool is_start_floating = true;
+    bool needs_deref = false;
+    std::vector<std::string> unknown_types;
 
-    struct Sets { bool nullable; std::vector<int> first; std::vector<int> last; };
+    struct Sets { bool matches_empty; std::vector<int> first; std::vector<int> last; };
 
-    static LinkConnector toLink(Connector a) { return a == Connector::Deref ? LinkConnector::Deref : LinkConnector::Child; }
     static void concat(std::vector<int> &dst, const std::vector<int> &src) {
         dst.insert(dst.end(), src.begin(), src.end());
     }
 
-    std::string typeName(const Position &p) const {
-        if (p.wildcard) return "*";
-        if (p.symbol == 0) return p.step ? p.step->type + "(?)" : "?";
-        return std::string(sym_name(p.symbol));
-    }
-
-    int newPosition(const Step &step) {
-        Position p;
-        p.step = &step;
-        p.wildcard = step.wildcard;
-        if (!step.wildcard) {
-            // `element` is renamed to `gdml_element` in the grammar (node_renames
-            // in rules.mjs) to dodge the inherited XML element rule; accept the
-            // bare GDML spelling at the query surface so callers needn't know it.
-            std::string_view type =
-                step.type == "element" ? std::string_view("gdml_element") : step.type;
-            p.symbol = sym(type.data());
-            if (p.symbol == 0) unknown_.push_back(step.type);
-        }
-        pos_.push_back(std::move(p));
-        follow_.emplace_back();
-        return static_cast<int>(pos_.size()) - 1;
-    }
-
-    int newWildcard() {
-        pos_.push_back(Position{nullptr, 0, true, false, {}});
-        follow_.emplace_back();
-        return static_cast<int>(pos_.size()) - 1;
-    }
-
-    Sets build(const Node &n, LinkConnector entry) {
+    Sets build(const Node &n, Hop entry) {
         Sets s = std::visit(overloaded{
             [&](const Step &st) {
-                Sets r{false, {newPosition(st)}, {}};
-                r.last = r.first;
-                return r;
+                NfaPosition p(st);
+                if (!p.wildcard && p.symbol == 0) unknown_types.push_back(st.type);
+
+                positions_list.push_back(std::move(p));
+                follow_position.emplace_back();
+
+                int i = static_cast<int>(positions_list.size()) - 1;
+                return Sets{false, {i}, {i}};
             },
             [&](const Alt &a) {
                 Sets r{false, {}, {}};
                 for (const auto &child : a.branches) {
                     Sets k = build(*child, entry);
-                    r.nullable = r.nullable || k.nullable;
+                    r.matches_empty = r.matches_empty || k.matches_empty;
                     concat(r.first, k.first);
                     concat(r.last, k.last);
                 }
@@ -143,57 +149,66 @@ private:
             [&](const Repeat &rep) {
                 Sets x = build(*rep.inner, entry);
                 Sets r{false, {}, {}};
-                if (rep.quant != Quantifier::Opt)  // Star/Plus: loop back, re-entering via the entry connector
+                if (rep.quant != Quantifier::Opt) {     // Star/Plus: loop back, re-entering via the entry connector
                     for (int p : x.last)
                         for (int q : x.first)
-                            follow_[p].push_back({q, entry});
-                r.nullable = (rep.quant != Quantifier::Plus) || x.nullable;
+                            follow_position[p].push_back({q, entry});
+                }
+
+                r.matches_empty = (rep.quant != Quantifier::Plus) || x.matches_empty;
                 r.first = x.first;
                 r.last = x.last;
                 return r;
             },
             [&](const Seq &sq) {
                 Sets r{false, {}, {}};
+                Hop hop = kHop.at(sq.connector);
+                if (hop == Hop::Deref) needs_deref = true;
+
                 if (sq.connector == Connector::Child || sq.connector == Connector::Deref) {
-                    LinkConnector connector = toLink(sq.connector);
-                    if (connector == LinkConnector::Deref) needsDeref_ = true;
                     Sets a = build(*sq.lhs, entry);
-                    Sets b = build(*sq.rhs, connector);
+                    Sets b = build(*sq.rhs, hop);
                     for (int p : a.last)
-                        for (int q : b.first) follow_[p].push_back({q, connector});
-                    r.nullable = a.nullable && b.nullable;
+                        for (int q : b.first) follow_position[p].push_back({q, hop});
+
+                    r.matches_empty = a.matches_empty && b.matches_empty;
                     r.first = a.first;
-                    if (a.nullable) concat(r.first, b.first);
+                    if (a.matches_empty) concat(r.first, b.first);
                     r.last = b.last;
-                    if (b.nullable) concat(r.last, a.last);
-                } else {  // Descendant / DerefClosure: A hop (w)% hop B, with (w)% nullable
-                    LinkConnector connector = (sq.connector == Connector::Descendant) ? LinkConnector::Child : LinkConnector::Deref;
-                    if (connector == LinkConnector::Deref) needsDeref_ = true;
+                    if (b.matches_empty) concat(r.last, a.last);
+                } else {  // Descendant / DerefClosure: A hop (w)% hop B, with (w)% matches_empty
                     Sets a = build(*sq.lhs, entry);
-                    int w = newWildcard();
-                    follow_[w].push_back({w, connector});  // (w)% self-loop
-                    Sets b = build(*sq.rhs, connector);
+                    NfaPosition wp;
+                    wp.wildcard = true;
+                    positions_list.push_back(std::move(wp));
+                    follow_position.emplace_back();
+                    int w = static_cast<int>(positions_list.size()) - 1;
+                    follow_position[w].push_back({w, hop});  // (w)% self-loop
+
+                    Sets b = build(*sq.rhs, hop);
                     for (int p : a.last) {
-                        follow_[p].push_back({w, connector});
-                        for (int q : b.first) follow_[p].push_back({q, connector});
+                        follow_position[p].push_back({w, hop});
+                        for (int q : b.first) follow_position[p].push_back({q, hop});
                     }
-                    for (int q : b.first) follow_[w].push_back({q, connector});
+                    for (int q : b.first) follow_position[w].push_back({q, hop});
+
                     std::vector<int> innerFirst{w};
                     concat(innerFirst, b.first);
                     std::vector<int> innerLast = b.last;
-                    if (b.nullable) innerLast.push_back(w);
-                    r.nullable = a.nullable && b.nullable;
+                    if (b.matches_empty) innerLast.push_back(w);
+
+                    r.matches_empty = a.matches_empty && b.matches_empty;
                     r.first = a.first;
-                    if (a.nullable) concat(r.first, innerFirst);
+                    if (a.matches_empty) concat(r.first, innerFirst);
                     r.last = innerLast;
-                    if (b.nullable) concat(r.last, a.last);
+                    if (b.matches_empty) concat(r.last, a.last);
                 }
                 return r;
             },
         }, n.value);
         // A node's predicates constrain the node it resolves to -> its terminal positions.
         for (const Predicate &pr : n.preds)
-            for (int p : s.last) pos_[p].guards.push_back(&pr);
+            for (int p : s.last) positions_list[p].guards.push_back(&pr);
         return s;
     }
 };

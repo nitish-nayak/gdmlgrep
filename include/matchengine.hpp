@@ -59,7 +59,7 @@ public:
         uneval_.clear();
         found_ = false;
         TSNode root = doc_.root();
-        int s = dfa_->step(dfa_->empty(), ts_node_symbol(root), LinkConnector::Child, true);
+        int s = dfa_->step(dfa_->empty(), ts_node_symbol(root), Hop::Child, true);
         walkDfa(root, guardFilterDfa(s, root));
         return collect();
     }
@@ -104,7 +104,7 @@ private:
         if (st.accept) record(n);
         if (st.hasDeref && index_) {
             for (TSNode d : gatherDeref(n)) {
-                int da = guardFilterDfa(dfa_->step(active, ts_node_symbol(d), LinkConnector::Deref, false), d);
+                int da = guardFilterDfa(dfa_->step(active, ts_node_symbol(d), Hop::Deref, false), d);
                 if (!dfa_->state(da).pos.empty()) continueDfaWalk(d, da);
                 if (stopAtFirst_ && found_) return;
             }
@@ -112,7 +112,7 @@ private:
         uint32_t c = ts_node_named_child_count(n);
         for (uint32_t i = 0; i < c; ++i) {
             TSNode ch = ts_node_named_child(n, i);
-            int s = dfa_->step(active, ts_node_symbol(ch), LinkConnector::Child, nfa_.floating());
+            int s = dfa_->step(active, ts_node_symbol(ch), Hop::Child, nfa_.floating());
             walkDfa(ch, guardFilterDfa(s, ch));
             if (stopAtFirst_ && found_) return;
         }
@@ -124,7 +124,7 @@ private:
         if (st.accept) record(n);
         if (st.hasDeref && index_) {
             for (TSNode d : gatherDeref(n)) {
-                int da = guardFilterDfa(dfa_->step(active, ts_node_symbol(d), LinkConnector::Deref, false), d);
+                int da = guardFilterDfa(dfa_->step(active, ts_node_symbol(d), Hop::Deref, false), d);
                 if (!dfa_->state(da).pos.empty()) continueDfaWalk(d, da);
                 if (stopAtFirst_ && found_) return;
             }
@@ -132,7 +132,7 @@ private:
         uint32_t c = ts_node_named_child_count(n);
         for (uint32_t i = 0; i < c; ++i) {
             TSNode ch = ts_node_named_child(n, i);
-            int a = guardFilterDfa(dfa_->step(active, ts_node_symbol(ch), LinkConnector::Child, false), ch);
+            int a = guardFilterDfa(dfa_->step(active, ts_node_symbol(ch), Hop::Child, false), ch);
             if (!dfa_->state(a).pos.empty()) continueDfaWalk(ch, a);
             if (stopAtFirst_ && found_) return;
         }
@@ -146,7 +146,7 @@ private:
         std::vector<int> keep;
         keep.reserve(st.pos.size());
         for (int q : st.pos) {
-            const Nfa::Position &P = nfa_.positions()[q];
+            const NfaPosition &P = nfa_.positions()[q];
             if (P.guards.empty() || guardsPass(P, n) == Tri::True) keep.push_back(q);
         }
         if (keep.size() == st.pos.size()) return structId;
@@ -155,7 +155,7 @@ private:
 
     // ---- guard evaluation ----
 
-    Tri guardsPass(const Nfa::Position &pos, TSNode n) {
+    Tri guardsPass(const NfaPosition &pos, TSNode n) {
         Tri acc = Tri::True;
         for (const Predicate *g : pos.guards) {
             Tri r = evalPred(*g, n);
@@ -251,7 +251,7 @@ private:
         uint32_t c = ts_node_named_child_count(n);
         for (uint32_t i = 0; i < c && !found_; ++i) {
             TSNode ch = ts_node_named_child(n, i);
-            int s = dfa_->step(dfa_->empty(), ts_node_symbol(ch), LinkConnector::Child, true);
+            int s = dfa_->step(dfa_->empty(), ts_node_symbol(ch), Hop::Child, true);
             walkDfa(ch, guardFilterDfa(s, ch));
         }
         return found_;

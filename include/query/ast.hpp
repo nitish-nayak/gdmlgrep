@@ -173,29 +173,29 @@ inline NodePtr fetch_node(NodeVariant value) {
     n->value = std::move(value);
     return n;
 }
-inline NodePtr step(std::string type) {
+inline NodePtr make_step_node(std::string type) {
     return fetch_node(Step{std::move(type), false});
 }
-inline NodePtr wildcard() {
+inline NodePtr make_wildcard_node() {
     return fetch_node(Step{"", true});
 }
-inline NodePtr seq(Connector connector, NodePtr lhs, NodePtr rhs) {
+inline NodePtr make_sequence_node(Connector connector, NodePtr lhs, NodePtr rhs) {
     return fetch_node(Seq{connector, std::move(lhs), std::move(rhs)});
 }
-inline NodePtr alt(std::vector<NodePtr> branches) {
+inline NodePtr make_alternation_node(std::vector<NodePtr> branches) {
     return fetch_node(Alt{std::move(branches)});
 }
-inline NodePtr repeat(Quantifier quant, NodePtr inner) {
+inline NodePtr make_repeat_node(Quantifier quant, NodePtr inner) {
     return fetch_node(Repeat{quant, std::move(inner)});
 }
 
-inline Predicate compare(std::string field, Comparator op, std::string value) {
+inline Predicate make_comparison_predicate(std::string field, Comparator op, std::string value) {
     return Predicate{Compare{std::move(field), op, std::move(value)}};
 }
-inline Predicate exists(NodePtr sub) {
+inline Predicate make_existence_predicate(NodePtr sub) {
     return Predicate{Exists{std::move(sub)}};
 }
-inline Predicate negated(Predicate inner) {
+inline Predicate make_negation_predicate(Predicate inner) {
     return Predicate{Not{std::make_unique<Predicate>(std::move(inner))}};
 }
 
@@ -244,7 +244,7 @@ private:
         branches.push_back(std::move(left));
         while (cursor.skip_whitespace(), cursor.match("|"))
             branches.push_back(parse_sequence());
-        return alt(std::move(branches));
+        return make_alternation_node(std::move(branches));
     }
 
     // seq := quant (CONNECTOR quant)*, left-associative.
@@ -255,7 +255,7 @@ private:
             cursor.skip_whitespace();
             auto connector = match_token(kConnectors, cursor);
             if (!connector) break;
-            left = seq(*connector, std::move(left), parse_quantity());
+            left = make_sequence_node(*connector, std::move(left), parse_quantity());
         }
         return left;
     }
@@ -268,7 +268,7 @@ private:
             cursor.skip_whitespace();
             auto q = match_token(kQuantifiers, cursor);
             if (!q) break;
-            a = repeat(*q, std::move(a));
+            a = make_repeat_node(*q, std::move(a));
         }
         return a;
     }
@@ -284,9 +284,9 @@ private:
             cursor.skip_whitespace();
             cursor.expect(')');
         } else if (cursor.match("*")) {
-            a = wildcard();
+            a = make_wildcard_node();
         } else if (std::isalpha((unsigned char)cursor.peek()) || cursor.peek() == '_') {
-            a = step(parse_identifier());
+            a = make_step_node(parse_identifier());
         } else {
             cursor.fail("expected a node type or '*'");
         }
@@ -306,19 +306,19 @@ private:
     // cursor rewinds and the identifier is parsed as a step path instead.
     Predicate parse_predicate() {
         cursor.skip_whitespace();
-        if (cursor.match("!")) return negated(parse_predicate());
+        if (cursor.match("!")) return make_negation_predicate(parse_predicate());
 
         std::size_t save = cursor.pos;
         if (std::isalpha((unsigned char)cursor.peek()) || cursor.peek() == '_') {
             std::string field = parse_identifier();
             cursor.skip_whitespace();
             if (auto op = match_token(kComparators, cursor))
-                return compare(std::move(field), *op,
+                return make_comparison_predicate(std::move(field), *op,
                                (*op == Comparator::Regex) ? parse_regex() : parse_value());
         }
 
         cursor.pos = save;
-        return exists(parse_alternation());
+        return make_existence_predicate(parse_alternation());
     }
 
     // An identifier. Precondition: the cursor is at an identifier start (alpha or

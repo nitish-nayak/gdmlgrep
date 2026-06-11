@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <set>
 
 // Defined in the vendored, generated grammar (externals/grammar/parser.c).
 extern "C" const TSLanguage *tree_sitter_gdml(void);
@@ -69,5 +70,17 @@ static const Symbol kCONSTANT("constant");
 static const Symbol kQUANTITY("quantity");
 static const Symbol kVALUE("value_attribute");
 static const Symbol kSTRING("string_attribute");
+
+// Node types that are not GDML elements (XML trivia, tags, expression internals).
+// The matcher's wildcard `*` matches any element except these; passed to the Dfa.
+static const std::set<TSSymbol> kSkipSymbols = {
+    sym("document"), sym("prolog"), sym("XMLDecl"), sym("doctypedecl"), sym("content"),
+    sym("CharData"), sym("Comment"), sym("PI"), sym("CDSect"), sym("Reference"),
+    sym("EntityRef"), sym("CharRef"), sym("AttValue"), sym("Name"), sym("Attribute"),
+    sym("value_attribute"), sym("string_attribute"), sym("gdml_value"), sym("number"),
+    sym("identifier"), sym("binary_expression"), sym("unary_expression"),
+    sym("parenthesized_expression"), sym("call_expression"), sym("VersionNum"),
+    sym("EncName"), sym("STag"), sym("ETag"), sym("EmptyElemTag"),
+};
 
 }  // namespace gg

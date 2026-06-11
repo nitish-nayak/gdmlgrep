@@ -37,9 +37,11 @@ enum class Connector  { Child, Descendant, Deref, DerefClosure };  //  /   //   
 enum class Quantifier { Star, Plus, Opt };                         //  %   +    ?
 enum class Comparator { Eq, Ne, Lt, Le, Gt, Ge, Regex };           //  =  != < <= > >=  =~
 
+// --------------------------
 // Tracks the parse position over the source and provides the lexing primitives.
 // The const methods (eof/at/peek) only inspect; the others advance the position.
 // fail() raises a parse error carrying the 1-based column and never returns.
+// --------------------------
 struct Cursor {
     std::string_view src;
     std::size_t pos = 0;
@@ -68,7 +70,9 @@ struct Cursor {
     }
 };
 
+// --------------------------
 // One (symbol, enum) entry in an operator table.
+// --------------------------
 template <class E>
 struct Token { std::string_view symbol; E val; };
 
@@ -96,21 +100,34 @@ static constexpr std::array<Token<Quantifier>, 3> kQuantifiers = {{
     {"%", Quantifier::Star}, {"+", Quantifier::Plus}, {"?", Quantifier::Opt},
 }};
 
+// --------------------------
 // Lets std::visit take a set of per-alternative lambdas (used to dispatch over
 // the AST variants here and in nfa/matchengine).
+// --------------------------
 template <class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
 template <class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
+// forward declare
 struct Node;
 struct Predicate;
 using NodePtr = std::unique_ptr<Node>;
 using PredicatePtr = std::unique_ptr<Predicate>;
 
+// --------------------------
 // The three predicate kinds.
-struct Compare { std::string field; Comparator op; std::string value;  std::string toString() const; };  // field OP value
-struct Exists  { NodePtr sub;                                          std::string toString() const; };  // [ subpath ]
-struct Not     { PredicatePtr neg;                                     std::string toString() const; };  // [ !pred ]
-
+// --------------------------
+struct Compare {
+    std::string field; Comparator op; std::string value;  // field OP value
+    std::string toString() const;
+};
+struct Exists {
+    NodePtr sub; // [ subpath ]
+    std::string toString() const;
+};
+struct Not {
+    PredicatePtr neg; // [ !pred ]
+    std::string toString() const;
+};
 // A test written inside [...] on a node. The active alternative is its kind.
 using PredicateVariant = std::variant<Compare, Exists, Not>;
 struct Predicate {
@@ -118,12 +135,25 @@ struct Predicate {
     std::string toString() const;
 };
 
+// --------------------------
 // The four node kinds.
-struct Step   { std::string type; bool wildcard = false;  std::string toString() const; };  // a node type, or '*'
-struct Seq    { Connector connector; NodePtr lhs, rhs;    std::string toString() const; };  // lhs CONNECTOR rhs
-struct Alt    { std::vector<NodePtr> branches;            std::string toString() const; };  // a | b | ...
-struct Repeat { Quantifier quant; NodePtr inner;          std::string toString() const; };  // inner with a quantifier
-
+// --------------------------
+struct Step {
+    std::string type; bool wildcard = false;  // a node type, or '*'
+    std::string toString() const;
+};
+struct Seq {
+    Connector connector; NodePtr lhs, rhs; // lhs CONNECTOR rhs
+    std::string toString() const;
+};
+struct Alt {
+    std::vector<NodePtr> branches; // a | b | ...
+    std::string toString() const;
+};
+struct Repeat {
+    Quantifier quant; NodePtr inner; // inner with a quantifier
+    std::string toString() const;
+};
 // A node in the query tree: one path operator (the active alternative) plus any
 // predicates attached to it. Predicates are independent of the kind — they may
 // constrain a step or the node a group resolves to, e.g. `(a | b)[x>5]`.
@@ -134,32 +164,48 @@ struct Node {
     std::string toString() const;
 };
 
+// --------------------------
 // Constructors for the AST: fetch_node wraps a node value in an owning pointer,
 // and each named factory builds one kind from its payload.
+// --------------------------
 inline NodePtr fetch_node(NodeVariant value) {
     auto n = std::make_unique<Node>();
     n->value = std::move(value);
     return n;
 }
-inline NodePtr step(std::string type) { return fetch_node(Step{std::move(type), false}); }
-inline NodePtr wildcard()             { return fetch_node(Step{"", true}); }
-inline NodePtr seq(Connector connector, NodePtr lhs, NodePtr rhs) { return fetch_node(Seq{connector, std::move(lhs), std::move(rhs)}); }
-inline NodePtr alt(std::vector<NodePtr> branches)                 { return fetch_node(Alt{std::move(branches)}); }
-inline NodePtr repeat(Quantifier quant, NodePtr inner)            { return fetch_node(Repeat{quant, std::move(inner)}); }
+inline NodePtr step(std::string type) {
+    return fetch_node(Step{std::move(type), false});
+}
+inline NodePtr wildcard() {
+    return fetch_node(Step{"", true});
+}
+inline NodePtr seq(Connector connector, NodePtr lhs, NodePtr rhs) {
+    return fetch_node(Seq{connector, std::move(lhs), std::move(rhs)});
+}
+inline NodePtr alt(std::vector<NodePtr> branches) {
+    return fetch_node(Alt{std::move(branches)});
+}
+inline NodePtr repeat(Quantifier quant, NodePtr inner) {
+    return fetch_node(Repeat{quant, std::move(inner)});
+}
+
 inline Predicate compare(std::string field, Comparator op, std::string value) {
     return Predicate{Compare{std::move(field), op, std::move(value)}};
 }
-inline Predicate exists(NodePtr sub) { return Predicate{Exists{std::move(sub)}}; }
+inline Predicate exists(NodePtr sub) {
+    return Predicate{Exists{std::move(sub)}};
+}
 inline Predicate negated(Predicate inner) {
     return Predicate{Not{std::make_unique<Predicate>(std::move(inner))}};
 }
 
+// --------------------------
 // A parsed query: its root node and whether it is anchored at the document root.
+// --------------------------
 struct Query {
     NodePtr root;
     bool anchored = false;
 };
-
 // Recursive-descent parser over the query text: one method per grammar
 // production. Throws std::runtime_error (via Cursor::fail) on a syntax error.
 class QueryParser {
@@ -190,17 +236,21 @@ private:
     // alt := seq ('|' seq)*
     NodePtr parse_alternation() {
         NodePtr left = parse_sequence();
+
         cursor.skip_whitespace();
         if (cursor.peek() != '|') return left;
+
         std::vector<NodePtr> branches;
         branches.push_back(std::move(left));
-        while (cursor.skip_whitespace(), cursor.match("|")) branches.push_back(parse_sequence());
+        while (cursor.skip_whitespace(), cursor.match("|"))
+            branches.push_back(parse_sequence());
         return alt(std::move(branches));
     }
 
     // seq := quant (CONNECTOR quant)*, left-associative.
     NodePtr parse_sequence() {
         NodePtr left = parse_quantity();
+
         for (;;) {
             cursor.skip_whitespace();
             auto connector = match_token(kConnectors, cursor);
@@ -213,6 +263,7 @@ private:
     // quant := atom ('%' | '?' | '+')*
     NodePtr parse_quantity() {
         NodePtr a = parse_atom();
+
         for (;;) {
             cursor.skip_whitespace();
             auto q = match_token(kQuantifiers, cursor);
@@ -227,6 +278,7 @@ private:
     NodePtr parse_atom() {
         cursor.skip_whitespace();
         NodePtr a;
+
         if (cursor.match("(")) {
             a = parse_alternation();
             cursor.skip_whitespace();
@@ -238,6 +290,7 @@ private:
         } else {
             cursor.fail("expected a node type or '*'");
         }
+
         for (;;) {
             cursor.skip_whitespace();
             if (!cursor.match("[")) break;
@@ -254,6 +307,7 @@ private:
     Predicate parse_predicate() {
         cursor.skip_whitespace();
         if (cursor.match("!")) return negated(parse_predicate());
+
         std::size_t save = cursor.pos;
         if (std::isalpha((unsigned char)cursor.peek()) || cursor.peek() == '_') {
             std::string field = parse_identifier();
@@ -262,6 +316,7 @@ private:
                 return compare(std::move(field), *op,
                                (*op == Comparator::Regex) ? parse_regex() : parse_value());
         }
+
         cursor.pos = save;
         return exists(parse_alternation());
     }
@@ -280,9 +335,11 @@ private:
     // '*', '/', units, ...), with trailing whitespace trimmed.
     std::string parse_value() {
         cursor.skip_whitespace();
+
         std::size_t start = cursor.pos;
         while (!cursor.eof() && cursor.peek() != ']' && cursor.peek() != '[')
           ++cursor.pos;
+
         std::size_t end = cursor.pos;
         while (end > start && std::isspace((unsigned char)cursor.src[end-1]))
           --end;  // rtrim
@@ -294,21 +351,25 @@ private:
     std::string parse_regex() {
         cursor.skip_whitespace();
         cursor.expect('/');
+
         std::string re;
         while (!cursor.eof() && cursor.peek() != '/') {
             bool esc = cursor.peek() == '\\';
             re += cursor.src[cursor.pos++];
             if (esc && !cursor.eof()) re += cursor.src[cursor.pos++];
         }
+
         cursor.expect('/');
         return re;
     }
 };
 
+// --------------------------
 // Render a node/predicate back to query syntax (for diagnostics and round-trip
 // tests). Each alternative renders itself; Node and Predicate dispatch over their
 // variant. The definitions are out-of-line because the recursive alternatives
 // reach back through NodePtr/PredicatePtr, which need the wrapper types complete.
+// --------------------------
 inline std::string Step::toString() const { return wildcard ? "*" : type; }
 
 inline std::string Seq::toString() const {

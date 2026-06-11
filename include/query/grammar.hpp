@@ -25,6 +25,9 @@ inline TSSymbol sym(const char *name) {
     return ts_language_symbol_for_name(tree_sitter_gdml(), name,
                                        static_cast<uint32_t>(std::strlen(name)), true);
 }
+inline const char* sym_name(const TSSymbol s) {
+    return ts_language_symbol_name(tree_sitter_gdml(), s);
+}
 
 // A fixed grammar symbol resolved by name. The catalog below is built at startup,
 // so this turns a typo or a renamed grammar rule into an immediate abort instead

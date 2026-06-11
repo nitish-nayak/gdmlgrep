@@ -13,7 +13,7 @@ int main(int argc, char **argv) {
     }
     try {
         gg::Query q = gg::QueryParser::parseString(argv[1]);
-        gg::Nfa nfa(q, tree_sitter_gdml());
+        gg::Nfa nfa(q);
         nfa.dump();
         for (const std::string &t : nfa.unknownTypes())
             std::fprintf(stderr, "warning: unknown node type '%s'\n", t.c_str());

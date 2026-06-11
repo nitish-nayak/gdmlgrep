@@ -44,7 +44,7 @@ int main(int argc, char **argv) {
         gg::Document doc(argv[1]);
         for (const auto &[query, expected] : cases) {
             gg::Query q = gg::QueryParser::parseString(query);
-            gg::Nfa nfa(q, tree_sitter_gdml());
+            gg::Nfa nfa(q);
             gg::MatchEngine engine(doc, nfa);
             std::size_t got = engine.run().size();
             bool ok = got == expected;

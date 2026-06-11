@@ -44,10 +44,10 @@ public:
     };
     struct Edge { int to; LinkConnector connector; };
 
-    Nfa(const Query &q, const TSLanguage *lang) : Nfa(*q.root, q.anchored, lang) {}
+    Nfa(const Query &q) : Nfa(*q.root, q.anchored) {}
 
     // Core constructor — also used to compile a predicate's subpath (C3).
-    Nfa(const Node &root, bool anchored, const TSLanguage *lang) : lang_(lang) {
+    Nfa(const Node &root, bool anchored) {
         floating_ = !anchored;
         Sets s = build(root, LinkConnector::Child);  // entry connector only matters for a bare top-level star
         start_ = std::move(s.first);
@@ -79,7 +79,6 @@ public:
     }
 
 private:
-    const TSLanguage *lang_;
     std::vector<Position> pos_;
     std::vector<std::vector<Edge>> follow_;
     std::vector<int> start_;
@@ -97,7 +96,7 @@ private:
     std::string typeName(const Position &p) const {
         if (p.wildcard) return "*";
         if (p.symbol == 0) return p.step ? p.step->type + "(?)" : "?";
-        return ts_language_symbol_name(lang_, p.symbol);
+        return std::string(sym_name(p.symbol));
     }
 
     int newPosition(const Step &step) {
@@ -110,8 +109,7 @@ private:
             // bare GDML spelling at the query surface so callers needn't know it.
             std::string_view type =
                 step.type == "element" ? std::string_view("gdml_element") : step.type;
-            p.symbol = ts_language_symbol_for_name(
-                lang_, type.data(), static_cast<uint32_t>(type.size()), true);
+            p.symbol = sym(type.data());
             if (p.symbol == 0) unknown_.push_back(step.type);
         }
         pos_.push_back(std::move(p));

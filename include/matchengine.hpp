@@ -235,7 +235,7 @@ private:
         auto it = subEngines_.find(&p);
         if (it != subEngines_.end()) return *it->second;
         auto &slot = subNfas_[&p];
-        slot = std::make_unique<Nfa>(*e.sub, /*anchored=*/false, tree_sitter_gdml());
+        slot = std::make_unique<Nfa>(*e.sub, /*anchored=*/false);
         auto eng = std::make_unique<MatchEngine>(doc_, *slot, index_);
         MatchEngine &ref = *eng;
         subEngines_.emplace(&p, std::move(eng));

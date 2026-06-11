@@ -38,7 +38,7 @@ int main(int argc, char **argv) {
 
         gg::Query q = gg::QueryParser::parseString(argv[1]);
         gg::Document doc(argv[2]);
-        gg::Nfa nfa(q, tree_sitter_gdml());
+        gg::Nfa nfa(q);
         gg::MatchEngine engine(doc, nfa);
 
         std::size_t n = engine.run().size();  // warm (builds the DFA)

@@ -67,7 +67,7 @@ int runQueries(const std::vector<std::string> &queries, const char *file, const 
     bool anyMatch = false;
     for (const std::string &query : queries) {
         gg::Query q = gg::QueryParser::parseString(query);
-        gg::Nfa nfa(q, tree_sitter_gdml());
+        gg::Nfa nfa(q);
         for (const std::string &t : nfa.unknownTypes())
             std::fprintf(stderr, "gg: warning: unknown node type '%s' in '%s'\n", t.c_str(), query.c_str());
         if (nfa.needsDeref() && !shared) shared = std::make_unique<gg::PreWalk>(doc);

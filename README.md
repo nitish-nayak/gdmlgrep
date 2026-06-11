@@ -32,4 +32,4 @@ cat file.gdml | ./build/gg -     # read from stdin
 - `externals/grammar/` — the generated GDML grammar (`parser.c`, `scanner.c`)
 - `include/` — header-only engine: `Document`, and (later) the query parser,
   name index, and query engine
-- `src/main.cpp` — the CLI
+- `src/gg.cpp` — the CLI

@@ -25,7 +25,7 @@ target_include_directories(gg-engine INTERFACE include)
 target_link_libraries(gg-engine INTERFACE tree-sitter gdml-grammar)
 
 # The gg CLI.
-add_executable(gg src/main.cpp)
+add_executable(gg src/gg.cpp)
 target_compile_options(gg PRIVATE -Wall -Wextra)
 target_link_libraries(gg PRIVATE gg-engine)
 

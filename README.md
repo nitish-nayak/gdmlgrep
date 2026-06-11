@@ -27,6 +27,7 @@ gg [flags] '<query>' <file.gdml>
 ```
 
 Run a query against a GDML file (or `-` for stdin).
+- Uses bundled `simple.gdml` (`externals/tree-sitter-gdml/gdml/simple.gdml`)
 ```sh
 # every volume
 $ gg volume simple.gdml

@@ -17,6 +17,7 @@
 
 namespace gg {
 
+// What a query run produces.
 struct MatchResult {
     std::vector<TSNode> matches;                                  // accept nodes, document order
     std::vector<std::pair<std::string, TSNode>> unevaluable;      // guards we couldn't evaluate

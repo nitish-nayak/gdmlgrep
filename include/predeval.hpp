@@ -34,17 +34,14 @@ namespace gg {
 enum class GuardResult { Pass, Fail, NaN };
 
 class PredEval;
-// Refine a structural DFA state by dropping guard-failing positions at n (the
-// Filter the Walker calls). A state with no guarded positions passes through
-// unchanged — the table-driven path.
+// The Walker's Filter: drop guard-failing positions at n (else pass through).
 inline int filter_guards(Dfa &dfa, PredEval &pred, int struct_id, TSNode n);
 
 class PredEval {
 public:
     PredEval(const Document &doc, const PreWalk *index) : doc(doc), index(index) {}
 
-    // Tri-state AND of a position's guards at n: Fail short-circuits; a NaN among
-    // Passes yields NaN. (NaN guards record themselves for diagnostics en route.)
+    // Tri-state AND of a position's guards: Fail short-circuits, a lone NaN -> NaN.
     GuardResult eval_guards(const std::vector<const Predicate *> &guards, TSNode n) {
         GuardResult acc = GuardResult::Pass;
         for (const Predicate *g : guards) {
@@ -69,6 +66,7 @@ private:
     struct SubQuery { std::unique_ptr<Nfa> nfa; std::unique_ptr<Dfa> dfa; };
     std::map<const Predicate *, SubQuery> sub_queries;          // one [subpath] -> its compiled query
 
+    // `Not` flips Pass/Fail but leaves NaN (an unevaluable `!` mustn't become confident).
     GuardResult eval_pred(const Predicate &p, TSNode n) {
         return std::visit(overloaded{
             [&](const Compare &c) { return eval_compare(p, c, n); },
@@ -80,6 +78,7 @@ private:
         }, p.value);
     }
 
+    // Compare attribute `field` to `value` (regex / numeric / textual, per the op).
     GuardResult eval_compare(const Predicate &p, const Compare &c, TSNode n) {
         std::optional<std::string> at = attrValue(doc, n, c.field);
         if (!at) return GuardResult::Fail;  // attribute absent -> does not match
@@ -108,8 +107,7 @@ private:
         }
     }
 
-    // Compile [subpath] once (cached), then boolean-walk under n. PredEval is its
-    // own guard evaluator, so nested predicates recurse straight back here.
+    // Compile [subpath] once (cached), then boolean-walk under n.
     bool exists_match(const Predicate &p, const Exists &e, TSNode n) {
         SubQuery &sq = sub_queries[&p];
         if (!sq.dfa) {
@@ -120,17 +118,15 @@ private:
                       [&](int s, TSNode m) { return filter_guards(*sq.dfa, *this, s, m); }).exists_under(n);
     }
 
-    // The index a sub-query walk needs: the shared one, or a lazily-built owned one
-    // when the sub-query derefs but none was provided — a deref that lives only
-    // inside a predicate doesn't mark the outer query as needing an index.
+    // A deref inside a predicate doesn't flag the outer query, so build an owned
+    // index lazily when a sub-query needs one.
     const PreWalk *index_for(const Nfa &sub) {
         if (index || !sub.needsDeref()) return index;
         if (!owned_index) owned_index = std::make_unique<PreWalk>(doc);
         return owned_index.get();
     }
 
-    // The numeric value of attribute `field`: a bare literal, else the parsed
-    // value expression evaluated over <define> constants (easy-T3).
+    // Numeric value of `field`: a bare literal, else its value-expression evaluated.
     bool numeric_value(TSNode n, const std::string &field, const std::string &av, double &out) {
         if (parse_num(av, out)) return true;
         TSNode e = valueExprNode(doc, n, field);
@@ -140,6 +136,7 @@ private:
         return false;
     }
 
+    // The predicate's compiled regex, built once and cached.
     const std::regex &regex_for(const Predicate &p, const Compare &c) {
         auto it = regex_cache.find(&p);
         if (it == regex_cache.end()) it = regex_cache.emplace(&p, std::regex(c.value)).first;
@@ -150,6 +147,7 @@ private:
 
     static GuardResult pass_if(bool b) { return b ? GuardResult::Pass : GuardResult::Fail; }
 
+    // Parse s as a number; the whole string must be numeric ("5cm" doesn't count).
     static bool parse_num(const std::string &s, double &out) {
         if (s.empty()) return false;
         const char *b = s.c_str();

@@ -87,6 +87,8 @@ private:
             TSNode ch = ts_node_named_child(n, i);
             bool with_start = !via_deref && dfa.nfa().floating();
             int a = filter(dfa.transition(active, ts_node_symbol(ch), Hop::Child, with_start), ch);
+            // The floating tree pass descends even into empty states — a fresh start
+            // may match deeper. A deref subgraph has no restart, so prune dead ends.
             if (!via_deref || !dfa.state(a).pos.empty()) walk(ch, a, via_deref);
             if (stop_at_first && found) return;
         }

@@ -1,25 +1,23 @@
 #pragma once
-// nfa.hpp — Glushkov position automaton built from a parsed Query.
+// nfa.hpp — the query compiled to a Glushkov position automaton.
 //
-// Each query Step becomes one position; a position carries the node-type it
-// matches (a tree-sitter TSSymbol, or a wildcard), the value-predicate guards
-// to check at match time, and an accept flag. The follow relation (the edges)
-// is labelled by the connector you traverse to reach the target — Child or Deref.
+// Every query Step is one position (NfaPosition): the node type it matches (or a
+// wildcard), the value-predicate guards checked there, and whether it accepts. The
+// follow relation (NfaEdge) connects positions, each edge labelled by the hop that
+// reaches the target — Child (descend to a child) or Deref (follow a reference).
 //
-// The two closure connectors are handled inline as if desugared:
+// The closure connectors desugar to a starred wildcard between the operands, so
+// edges only ever carry a single Child/Deref hop and arbitrary depth falls out of
+// the Kleene star:
 //   A // B   ==   A /(*)%/ B          (proper descendant, >=1 child hop)
 //   A ==> B  ==   A =>(*)%=> B        (>=1 deref hop)
-// i.e. a synthetic starred-wildcard position sits between the operands, so the
-// automaton only ever deals with single Child/Deref hops and arbitrary depth
-// falls out of the Kleene star.
 //
-// Floating (the default) is NOT baked in as edges: the engine attempts a fresh
-// start at every node during its single DFS, which is the O(n) single-pass
-// behaviour. Anchored queries (leading `/`) start only at the document root;
-// `floating()` records which.
+// Floating (the default) is not encoded as edges: the engine re-attempts a start
+// at every node during its single O(n) DFS. Anchored queries (leading `/`) start
+// only at the document root; floating() reports which.
 //
-// Lifetime: guards point into the Query's AST, so the Query must outlive the
-// Nfa and must not be modified after construction.
+// Lifetime: a position's guards point into the Query's AST, so the Query must
+// outlive the Nfa and stay unmodified after construction.
 #include "ast.hpp"
 #include "grammar.hpp"
 
@@ -32,7 +30,7 @@
 
 namespace gg {
 
-enum class Hop { Child, Deref };
+enum class Hop { Child, Deref };  // a single edge hop: descend to a child (/) or dereference (=>)
 
 // The Hop each Connector's edges traverse. The closure forms (Descendant //,
 // DerefClosure ==>) loop over the same hop as their single-step forms (/, =>).
@@ -66,11 +64,14 @@ struct NfaPosition {
 // A follow edge: the target position and the hop that reaches it.
 struct NfaEdge { int to; Hop hop; };
 
+// The compiled automaton: the positions, their follow (edge) relation, the
+// query's start positions, and a few derived flags. Built from a Query in the
+// constructor, then read-only.
 class Nfa {
 public:
     Nfa(const Query &q) : Nfa(*q.root, q.anchored) {}
 
-    // Core constructor — also used to compile a predicate's subpath (C3).
+    // Builds the automaton for root; also used to compile a predicate's sub-path.
     Nfa(const Node &root, bool anchored) {
         is_start_floating = !anchored;
         Sets s = build(root, Hop::Child);  // entry hop only matters for a bare top-level star
@@ -85,6 +86,7 @@ public:
     bool needsDeref() const { return needs_deref; }
     const std::vector<std::string> &unknownTypes() const { return unknown_types; }
 
+    // Human-readable dump of the automaton, for diagnostics.
     void dump(std::FILE *out = stdout) const {
         std::fprintf(out, "nfa: %zu positions, floating=%d, needsDeref=%d\n",
                      positions_list.size(), is_start_floating, needs_deref);
@@ -118,14 +120,20 @@ private:
     bool needs_deref = false;
     std::vector<std::string> unknown_types;
 
+    // Glushkov sets for a sub-expression: whether it matches the empty path, plus
+    // its first/last position sets. (Follow edges are wired into follow_position.)
     struct Sets { bool matches_empty; std::vector<int> first; std::vector<int> last; };
 
+    // Append src onto dst.
     static void concat(std::vector<int> &dst, const std::vector<int> &src) {
         dst.insert(dst.end(), src.begin(), src.end());
     }
 
+    // Glushkov construction: returns the (matches_empty, first, last) sets for n,
+    // wiring follow edges between positions as it descends.
     Sets build(const Node &n, Hop entry) {
         Sets s = std::visit(overloaded{
+            // Step: a single position, which is its own first and last (never empty).
             [&](const Step &st) {
                 NfaPosition p(st);
                 if (!p.wildcard && p.symbol == 0) unknown_types.push_back(st.type);
@@ -136,6 +144,7 @@ private:
                 int i = static_cast<int>(positions_list.size()) - 1;
                 return Sets{false, {i}, {i}};
             },
+            // Alternation: first/last are the unions over the branches; empty if any branch is.
             [&](const Alt &a) {
                 Sets r{false, {}, {}};
                 for (const auto &child : a.branches) {
@@ -146,10 +155,11 @@ private:
                 }
                 return r;
             },
+            // Quantifier: %/+ add last->first loop-back edges; %/? also match the empty path.
             [&](const Repeat &rep) {
                 Sets x = build(*rep.inner, entry);
                 Sets r{false, {}, {}};
-                if (rep.quant != Quantifier::Opt) {     // Star/Plus: loop back, re-entering via the entry connector
+                if (rep.quant != Quantifier::Opt) {     // Star/Plus: loop back, re-entering via the entry hop
                     for (int p : x.last)
                         for (int q : x.first)
                             follow_position[p].push_back({q, entry});
@@ -160,6 +170,8 @@ private:
                 r.last = x.last;
                 return r;
             },
+            // Sequence: link a.last -> b.first by the hop; the closure forms (// ==>)
+            // thread a starred wildcard between the operands (see the file header).
             [&](const Seq &sq) {
                 Sets r{false, {}, {}};
                 Hop hop = kHop.at(sq.connector);

@@ -312,9 +312,11 @@ private:
         if (std::isalpha((unsigned char)cursor.peek()) || cursor.peek() == '_') {
             std::string field = parse_identifier();
             cursor.skip_whitespace();
-            if (auto op = match_token(kComparators, cursor))
-                return make_comparison_predicate(std::move(field), *op,
-                               (*op == Comparator::Regex) ? parse_regex() : parse_value());
+            // "=>" and "==>" before an "=" comparison
+            if (!cursor.at("==>") && !cursor.at("=>"))
+                if (auto op = match_token(kComparators, cursor))
+                    return make_comparison_predicate(std::move(field), *op,
+                                   (*op == Comparator::Regex) ? parse_regex() : parse_value());
         }
 
         cursor.pos = save;

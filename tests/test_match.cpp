@@ -35,6 +35,7 @@ int main(int argc, char **argv) {
         {"position[name=~/px.*/]", 3},
         {"volume[physvol]", 1},
         {"volume[!physvol]", 2},
+        {"volume[physvol => volume]", 1},  // deref subpath in a predicate: "=>" must not parse as "="
         {"box | tube", 6},
         {"cone[deltaphi>3]", 1},     // deltaphi=TWOPI=2*pi=6.28 (easy-T3)
         {"sphere[deltatheta>4]", 0}, // deltatheta=PI=3.14, not > 4

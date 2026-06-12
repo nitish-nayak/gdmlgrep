@@ -18,18 +18,18 @@ gg ships as a single Actually-Portable-Executable (APE) which runs
 natively on Linux, macOS, and Windows, on both x86-64 and ARM.
 No installation needed, no dependencies.
 ```sh
-    curl -L -o gg https://github.com/nitish-nayak/gdmlgrep/releases/download/v0.1.0/gg
-    chmod +x gg
-    ./gg --help
+curl -L -o gg https://github.com/nitish-nayak/gdmlgrep/releases/download/v0.1.0/gg
+chmod +x gg
+./gg --help
 ```
-This is enabled by [cosmocc](https://github.com/jart/cosmopolitan) (See [Build](#build)).
+This is enabled by the amazing [cosmocc](https://github.com/jart/cosmopolitan) compiler (See [Build](#build)).
 
 ## Build
 
 If you'd prefer a local build, this is also relatively straightforward using standard `make` or `cmake`.
 - Default `make` however, builds the cosmocc APE.
-- This builds a slightly beefier executable (`2.7 MB` -> `6.9 MB`) since it ships its own `libc` runtime as well as embedding `x86-64` and `aarch64` directly, but can be used everywhere (`ARM`, `x86_64`) with the same binary!
-- Use `make NATIVE=1` for standard `gcc`.
+- `cosmocc` builds a slightly beefier executable (`2.7 MB` -> `6.9 MB`) since it ships its own `libc` runtime as well as embedding `x86-64` and `aarch64` directly, but can be used everywhere (`ARM`, `x86_64`) with the same binary!
+- Use `make NATIVE=1` instead for a standard `gcc` build.
 
 ```sh
 git submodule update --init

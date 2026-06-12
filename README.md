@@ -62,6 +62,8 @@ make NATIVE=1
 | `-h`, `--help` | show help |
 
 
+## Cookbook
+
 Run a query against a GDML file (or `-` for stdin).
 
 The following section showcases some examples against a real geometry - the LHCb VELO from Keith Sloan's GDML
@@ -190,6 +192,18 @@ VeloVacTanklvVTankDownStream
 └── VeloVacTanklvVTank4B
 ```
 
+If you don't care to display the repeated volumes, simply pipe it to `grep` :
+```
+curl -fsSL "$VELO" | ./gg --pretty placement-tree VeloVacTanklvVTankDownStream - | grep -v "repeated"
+```
+
+```
+VeloVacTanklvVTankDownStream
+├── VeloVacTanklvV5Bx2
+├── VeloVacTanklvV5Bx1
+└── VeloVacTanklvVTank4B
+```
+
 Audit the GDML:
 
 ```sh
@@ -239,6 +253,21 @@ done | sort -rn | head
 7 VeloRFFoillvRFPUSect2
 7 VeloRFFoillvRFPUSect1
 ```
+
+### Speed
+`gg` uses its own Query AST and the external GDML grammar to compile the expression into an [NFA](https://en.wikipedia.org/wiki/Nondeterministic_finite_automaton).
+This is then converted into a [DFA](https://en.wikipedia.org/wiki/Deterministic_finite_automaton) for execution. It's the same strategy used by `jsongrep`.
+As a consequence, the tool is quite fast! For example :
+
+```
+# print entire volume hierarchy of large gdml file as before
+time curl -fsSL "$VELO" | ./gg --pretty placement-tree VeloVacTanklvVTankDownStream -
+```
+gives me
+```
+./gg --pretty placement-tree VeloVacTanklvVTankDownStream -  0.11s user 0.02s system 42% cpu 0.291 total
+```
+This is actually ~90% dominated by the grammar parsing itself (using tree-sitter), leaving the rest devoted to the actual search. If one needs to run multiple queries on the same gdml file, this can be done by chaining the queries with `-e`, which parses it once, then runs the searches sequentially.
 
 ## Query Syntax
 

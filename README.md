@@ -50,59 +50,6 @@ make NATIVE=1
 ./gg [flags] '<query>' <file.gdml>
 ```
 
-Run a query against a GDML file (or `-` for stdin).
-- Uses bundled `simple.gdml` (`tree-sitter/tree-sitter-gdml/gdml/simple.gdml`)
-```sh
-# every volume
-$ ./gg volume simple.gdml
-simple.gdml:92: <volume name="v1">
-simple.gdml:96: <volume name="v2">
-simple.gdml:100: <volume name="World">
-
-# count physvols at any depth
-$ ./gg -c '// physvol' simple.gdml
-2
-
-# emit one field instead of the whole line
-$ ./gg -o name volume simple.gdml
-v1
-v2
-World
-
-# follow references: the volumes each physvol places
-$ ./gg 'physvol => volume' simple.gdml
-simple.gdml:92: <volume name="v1">
-simple.gdml:96: <volume name="v2">
-
-# numeric attribute predicate
-$ ./gg 'box[x>1000]' simple.gdml
-simple.gdml:62: <box name="WorldBox" x="10000.0" y="10000.0" z="10000.0"/>
-
-# regex on an attribute
-$ ./gg 'material[name=~/^A/]' simple.gdml
-simple.gdml:41: <material name="Al" Z="13.0">
-simple.gdml:50: <material name="Air">
-
-# negated existence: volumes with no physvol child
-$ ./gg 'volume[!physvol]' simple.gdml
-simple.gdml:92: <volume name="v1">
-simple.gdml:96: <volume name="v2">
-
-# alternation, count only
-$ ./gg -c 'box | tube' simple.gdml
-6
-
-# group + `%` (zero or more): a volume and everything it places, transitively
-$ ./gg 'volume / (physvol => volume)%' simple.gdml
-simple.gdml:92: <volume name="v1">
-simple.gdml:96: <volume name="v2">
-simple.gdml:100: <volume name="World">
-
-# `+` (one or more) instead — excludes the starting volume (one hop minimum)
-$ ./gg -c '(physvol => volume)+' simple.gdml
-2
-```
-
 ### Flags
 
 | Flag | Effect |
@@ -113,6 +60,185 @@ $ ./gg -c '(physvol => volume)+' simple.gdml
 | `-q` | quiet: no output, exit status only |
 | `--pretty` | ANSI-colorized output |
 | `-h`, `--help` | show help |
+
+
+Run a query against a GDML file (or `-` for stdin).
+
+The following section showcases some examples against a real geometry - the LHCb VELO from Keith Sloan's GDML
+sample set (3019 lines, 59 volumes, 319 placements, 48 boolean solids).
+
+```sh
+VELO=https://raw.githubusercontent.com/KeithSloan/GDML/Main/SampleFiles/CERN/lhcbvelo.gdml
+curl -fsSL "$VELO" | ./gg '<query>' -
+```
+
+Count solids by type in a single parse. Each `-e` adds a query, `-c` prints
+counts instead of matching lines, and `A | B` matches either type:
+
+```sh
+curl -fsSL "$VELO" | ./gg -c -e box -e tube -e trap -e polycone -e 'union | subtraction' -
+```
+
+```
+box:53
+tube:31
+trap:18
+polycone:10
+union | subtraction:48
+```
+
+List every boolean solid:
+
+```sh
+curl -fsSL "$VELO" | ./gg 'union | subtraction' -
+```
+
+Find booleans that contain a nested boolean. The `[ ]` keeps only those whose
+operand (`first` or `second`) references another boolean, and `=>` follows that
+reference to the solid it names:
+
+```sh
+curl -fsSL "$VELO" | ./gg '(union | subtraction)[(first | second) => (union | subtraction)]' -
+```
+
+```
+lhcbvelo.gdml:721: <union name="PuStationUnion">
+lhcbvelo.gdml:735: <union name="PUdetectorRUnion">
+...                                          (19 results)
+```
+
+To list the inner operands instead, follow the references from the other side:
+
+```sh
+curl -fsSL "$VELO" | ./gg -c '(first | second) => (union | subtraction)' -      # 19
+curl -fsSL "$VELO" | ./gg -o name '(first | second) => (union | subtraction)' -
+```
+
+Find volumes whose solid is a boolean. `volume / solidref` steps from each
+volume into its `solidref` child, and `=>` follows that reference to the solid:
+
+```sh
+curl -fsSL "$VELO" | ./gg -c 'volume / solidref => (union | subtraction)' -     # 29
+```
+
+Or, since only a `solidref` can point at a boolean (a `materialref` cannot), let
+`*` stand for any child and skip naming it:
+
+```sh
+curl -fsSL "$VELO" | ./gg -c 'volume[* => (union | subtraction)]' -             # 29
+```
+
+Count the volumes reachable below a given volume, following placements
+transitively (`+` is one or more `physvol => volume` hops):
+
+```sh
+curl -fsSL "$VELO" | ./gg -c 'volume[name=VelolvVelo] / (physvol => volume)+' -  # 57
+```
+
+List leaf volumes, those that place nothing inside. `[!physvol]` keeps only
+volumes with no `physvol` child:
+
+```sh
+curl -fsSL "$VELO" | ./gg -c 'volume[!physvol]' -                               # 46
+```
+
+Find placements at any depth with `//`. Physvols are nested inside volumes, not
+direct children of `structure`, so `/` finds none and `//` reaches every level:
+
+```sh
+curl -fsSL "$VELO" | ./gg -c 'structure / physvol' -                            # 0
+curl -fsSL "$VELO" | ./gg -c 'structure // physvol' -                           # 319
+```
+
+List the materials reached by placed geometry with `==>`. A physvol references a
+volume, not a material, so a single `=>` finds none; `==>` follows the reference
+chain physvol → volume → material:
+
+```sh
+curl -fsSL "$VELO" | ./gg -c 'physvol => material' -                            # 0
+curl -fsSL "$VELO" | ./gg -o name 'physvol ==> material' - | sort -u
+```
+
+```
+sAluminium
+sCarbon
+sCopper
+...
+```
+
+### Verbs
+
+Some questions need the full gdml reference graph or non-flat output, so they're
+subcommands rather than queries:
+
+Pretty-print the placement tree under a named volume. `placement-tree` expands
+the references into the physical mother/daughter hierarchy, and `--pretty` draws
+the connectors:
+
+```sh
+curl -fsSL "$VELO" | ./gg --pretty placement-tree VeloVacTanklvVTankDownStream -
+```
+
+```
+VeloVacTanklvVTankDownStream
+├── VeloVacTanklvV5Bx2
+├── VeloVacTanklvV5Bx2 (repeated)
+├── VeloVacTanklvV5Bx2 (repeated)
+├── VeloVacTanklvV5Bx2 (repeated)
+├── VeloVacTanklvV5Bx1
+├── VeloVacTanklvV5Bx1 (repeated)
+└── VeloVacTanklvVTank4B
+```
+
+Audit the GDML:
+
+```sh
+curl -fsSL "$VELO" | ./gg dangling -      # referenced but never defined (none here)
+curl -fsSL "$VELO" | ./gg dead-defs -     # defined but never referenced (79 lines)
+```
+
+Trace where a name is referenced. `find-usages` lists every `*ref` that points
+at the given name:
+
+```sh
+curl -fsSL "$VELO" | ./gg find-usages sSilicon -
+```
+
+```
+lhcbvelo.gdml:1185: <materialref ref="sSilicon"/>
+lhcbvelo.gdml:1198: <materialref ref="sSilicon"/>
+...
+```
+
+Filter elements by their attributes. `[attr > value]` compares a number, and
+`[attr =~/…/]` matches the attribute text against a regular expression:
+
+```sh
+curl -fsSL "$VELO" | ./gg -c 'box[x>100]' -                      # 11
+curl -fsSL "$VELO" | ./gg -c 'tube[rmax>40]' -                   # 17
+curl -fsSL "$VELO" | ./gg -o name 'material[name=~/[Ss]ili/]' -  # sSilicon
+```
+
+### Composing with other tools
+
+`gg` writes plain lines, so it pipes into the usual tools. Fetch once, then rank
+volumes by the size of the subtree below each:
+
+```sh
+curl -fsSL "$VELO" -o lhcbvelo.gdml
+for v in $(./gg -o name volume lhcbvelo.gdml); do
+  echo "$(./gg -c "volume[name=$v] / (physvol => volume)+" lhcbvelo.gdml) $v"
+done | sort -rn | head
+```
+
+```
+58 World
+57 VelolvVelo
+12 VeloSupportslvVeloSupport
+7 VeloRFFoillvRFUpStreamSection
+7 VeloRFFoillvRFPUSect2
+7 VeloRFFoillvRFPUSect1
+```
 
 ## Query Syntax
 
@@ -157,30 +283,3 @@ reported on stderr.
 | `step?` | optional |
 | `( … )` | group, e.g. `(physvol => volume)%` |
 | `a \| b` | alternation, e.g. `box \| tube` |
-
-## Verbs
-
-Some questions need the full gdml reference graph or non-flat output, so they're
-subcommands rather than queries:
-
-```sh
-# geometry placement hierarchy from <world> (optionally from a named volume)
-# equivalent to `tree` but for the placement structure; --pretty draws connectors
-$ gg --pretty placement-tree simple.gdml
-World
-├── v2
-└── v1
-
-# sites that reference a name
-$ gg find-usages Al simple.gdml
-simple.gdml:93: <materialref ref="Al"/>
-simple.gdml:97: <materialref ref="Al"/>
-
-# names defined but never referenced
-$ gg dead-defs simple.gdml
-simple.gdml:10: <position name="shiftbyx" x="20.0"/>
-...
-
-# names referenced but never defined
-$ gg dangling simple.gdml
-```

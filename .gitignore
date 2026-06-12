@@ -1,1 +1,6 @@
 /build/
+
+# gg CLI build artifacts (Makefile); cosmocc also drops the debug ELFs
+/gg
+/gg.com.dbg
+/gg.aarch64.elf

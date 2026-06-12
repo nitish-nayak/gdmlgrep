@@ -5,7 +5,7 @@
 //
 //   placement-tree  the geometry placement hierarchy from <world> (or a named
 //                   volume), each volume expanded once (shared subtrees
-//                   collapsed with "see above")
+//                   collapsed with "repeated")
 //   dead-defs       names defined but never referenced
 //   dangling        names referenced but never defined
 //   find-usages     the sites that reference a given name
@@ -90,7 +90,7 @@ private:
     }
 
     // Placement hierarchy. kind: 0 root, 1 mid-sibling ├──, 2 last └── (for
-    // --pretty; plain mode indents by depth). Shared subtrees collapse "(see above)".
+    // --pretty; plain mode indents by depth). Shared subtrees collapse "(repeated)".
     void emit_node(TSNode logical, const std::string &prefix, int kind, int depth) {
         std::string name = std::string(index.fieldText(logical, "name"));
         if (pretty) {
@@ -100,7 +100,7 @@ private:
             std::printf("%*s%s", depth * 2, "", name.c_str());
         }
         if (!visited.insert(name).second) {
-            std::printf("%s (see above)%s\n", pretty ? ansi::dim : "", pretty ? ansi::reset : "");
+            std::printf("%s (repeated)%s\n", pretty ? ansi::dim : "", pretty ? ansi::reset : "");
             return;
         }
         std::printf("\n");

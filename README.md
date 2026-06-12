@@ -24,6 +24,17 @@ chmod +x gg
 ```
 This is enabled by the amazing [cosmocc](https://github.com/jart/cosmopolitan) compiler (See [Build](#build)).
 
+If you're facing issues on older zsh versions, see details [here](https://github.com/jart/cosmopolitan#shells).
+In general, they should work by running
+```sh
+sh -c "./gg [flags] 'query' <file.gdml>"
+```
+instead of the usual
+```sh
+./gg [flags] 'query' <file.gdml>
+```
+or by upgrading to zsh 5.9+ instead
+
 ## Build
 
 If you'd prefer a local build, this is also relatively straightforward using standard `make` or `cmake`.

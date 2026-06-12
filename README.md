@@ -14,68 +14,79 @@ See Micah's blog [post](https://micahkepe.com/blog/jsongrep/) for more details.
 
 ## Build
 
+The build is relatively straightforward using standard `make` or `cmake`.
+- Default `make` however, builds an **Actually Portable Executable** (APE) using the incredible `cosmocc` [compiler](https://github.com/jart/cosmopolitan)
+- This builds a slightly beefier executable (`2.7 MB` -> `6.9 MB`) since it ships its own `libc` runtime as well as embedding `x86-64` and `aarch64` directly, but can be used everywhere (`ARM`, `x86_64`) with the same binary!
+
 ```sh
-git submodule update --init    # fetch the tree-sitter runtime + GDML grammar
-cmake -B build
-cmake --build build
+git submodule update --init
+
+# Build through either of the below options
+# CMake — native build + tests
+cmake -B build && cmake --build build
+
+# Makefile — portable APE (needs cosmocc/cosmoc++ on PATH)
+make
+# …or a native binary using standard GCC:
+make NATIVE=1
 ```
 
 ## Usage
 
 ```sh
-gg [flags] '<query>' <file.gdml>
+./gg [flags] '<query>' <file.gdml>
 ```
 
 Run a query against a GDML file (or `-` for stdin).
 - Uses bundled `simple.gdml` (`tree-sitter/tree-sitter-gdml/gdml/simple.gdml`)
 ```sh
 # every volume
-$ gg volume simple.gdml
+$ ./gg volume simple.gdml
 simple.gdml:92: <volume name="v1">
 simple.gdml:96: <volume name="v2">
 simple.gdml:100: <volume name="World">
 
 # count physvols at any depth
-$ gg -c '// physvol' simple.gdml
+$ ./gg -c '// physvol' simple.gdml
 2
 
 # emit one field instead of the whole line
-$ gg -o name volume simple.gdml
+$ ./gg -o name volume simple.gdml
 v1
 v2
 World
 
 # follow references: the volumes each physvol places
-$ gg 'physvol => volume' simple.gdml
+$ ./gg 'physvol => volume' simple.gdml
 simple.gdml:92: <volume name="v1">
 simple.gdml:96: <volume name="v2">
 
 # numeric attribute predicate
-$ gg 'box[x>1000]' simple.gdml
+$ ./gg 'box[x>1000]' simple.gdml
 simple.gdml:62: <box name="WorldBox" x="10000.0" y="10000.0" z="10000.0"/>
 
 # regex on an attribute
-$ gg 'material[name=~/^A/]' simple.gdml
+$ ./gg 'material[name=~/^A/]' simple.gdml
 simple.gdml:41: <material name="Al" Z="13.0">
 simple.gdml:50: <material name="Air">
 
 # negated existence: volumes with no physvol child
-$ gg 'volume[!physvol]' simple.gdml
+$ ./gg 'volume[!physvol]' simple.gdml
 simple.gdml:92: <volume name="v1">
 simple.gdml:96: <volume name="v2">
 
 # alternation, count only
-$ gg -c 'box | tube' simple.gdml
+$ ./gg -c 'box | tube' simple.gdml
 6
 
 # group + `%` (zero or more): a volume and everything it places, transitively
-$ gg 'volume / (physvol => volume)%' simple.gdml
+$ ./gg 'volume / (physvol => volume)%' simple.gdml
 simple.gdml:92: <volume name="v1">
 simple.gdml:96: <volume name="v2">
 simple.gdml:100: <volume name="World">
 
 # `+` (one or more) instead — excludes the starting volume (one hop minimum)
-$ gg -c '(physvol => volume)+' simple.gdml
+$ ./gg -c '(physvol => volume)+' simple.gdml
 2
 ```
 

@@ -24,10 +24,12 @@ add_library(gg-engine INTERFACE)
 target_include_directories(gg-engine INTERFACE include)
 target_link_libraries(gg-engine INTERFACE tree-sitter gdml-grammar)
 
-# The gg CLI.
+# The gg CLI — emitted at the repo root (consistent with the Makefile builds);
+# the test binaries below stay under the build dir.
 add_executable(gg src/gg.cpp)
 target_compile_options(gg PRIVATE -Wall -Wextra)
 target_link_libraries(gg PRIVATE gg-engine)
+set_target_properties(gg PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
 # Tests (built by default; run directly).
 enable_testing()
